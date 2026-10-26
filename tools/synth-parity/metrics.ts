@@ -161,7 +161,18 @@ export function octaveLtas(a: Audio): { fc: number; db: number }[] {
  * detector bias (about −N/2), which cancels when two renders are compared.
  */
 export function onsets(a: Audio): number[] {
-  const N = 1024, H = 64, m = mono(a), win = Float64Array.from({ length: N }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N));
+  const H = FLUX_HOP;
+  const flux = onsetFlux(a);
+  const max = flux.reduce((p, x) => Math.max(p, x), 0);
+  return pickOnsets(flux, max, a.rate, H);
+}
+
+/** Hop of the spectral-flux curve, in frames. */
+export const FLUX_HOP = 64;
+
+/** Spectral flux of `a` (log-magnitude increases summed over bins), one value per `FLUX_HOP` frames. */
+export function onsetFlux(a: Audio): Float64Array {
+  const N = 1024, H = FLUX_HOP, m = mono(a), win = Float64Array.from({ length: N }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N));
   // frames stop where the window would leave the signal (zero padding there reads as a click)
   const frames = Math.max(1, Math.floor((m.length - N / 2) / H) + 1);
   const flux = new Float64Array(frames);
@@ -179,8 +190,12 @@ export function onsets(a: Audio): number[] {
     flux[f] = d;
     prev = cur;
   }
-  const max = flux.reduce((p, x) => Math.max(p, x), 0);
-  const W = Math.round((0.25 * a.rate) / H), gap = 1024 / H, out: number[] = [];
+  return flux;
+}
+
+function pickOnsets(flux: Float64Array, max: number, rate: number, H: number): number[] {
+  const frames = flux.length;
+  const W = Math.round((0.25 * rate) / H), gap = 1024 / H, out: number[] = [];
   const pre = new Float64Array(frames + 1);
   for (let f = 0; f < frames; f++) pre[f + 1] = pre[f] + flux[f];
   for (let f = 0; f < frames; f++) {
@@ -193,6 +208,38 @@ export function onsets(a: Audio): number[] {
   return out;
 }
 
+/** Rectified spectral flux minus its local mean (±0.25 s): the onset-strength curve the alignment correlates. */
+function novelty(flux: Float64Array, rate: number): Float64Array {
+  const W = Math.round((0.25 * rate) / FLUX_HOP), pre = new Float64Array(flux.length + 1);
+  for (let f = 0; f < flux.length; f++) pre[f + 1] = pre[f] + flux[f];
+  return Float64Array.from(flux, (x, f) => {
+    const lo = Math.max(0, f - W), hi = Math.min(flux.length, f + W + 1);
+    return Math.max(0, x - (pre[hi] - pre[lo]) / (hi - lo));
+  });
+}
+
+/**
+ * Timing of `ours` against `ref` by the cross-correlation of their onset-strength curves: the lag in frames (positive =
+ * ours later, multiple of `FLUX_HOP`) with the highest normalised correlation within ±`maxLag`, and that correlation.
+ * Unlike peak picking it does not depend on which of two neighbouring hits each render's threshold happens to keep.
+ */
+export function alignment(ours: Audio, ref: Audio, maxLag: number): { lag: number; corr: number; at0: number } {
+  const [x, y] = [novelty(onsetFlux(ours), ours.rate), novelty(onsetFlux(ref), ref.rate)];
+  const L = Math.ceil(maxLag / FLUX_HOP);
+  const dot = (lag: number) => {
+    let s = 0;
+    for (let f = Math.max(0, -lag); f < y.length && f + lag < x.length; f++) s += x[f + lag] * y[f];
+    return s;
+  };
+  const norm = Math.sqrt(x.reduce((p, v) => p + v * v, 0) * y.reduce((p, v) => p + v * v, 0)) || 1;
+  let best = 0, bestC = -Infinity;
+  for (let lag = -L; lag <= L; lag++) {
+    const c = dot(lag) / norm;
+    if (c > bestC) [best, bestC] = [lag, c];
+  }
+  return { lag: best * FLUX_HOP, corr: bestC, at0: dot(0) / norm };
+}
+
 // ---------- comparison ----------
 
 export interface Tolerance {
@@ -202,17 +249,25 @@ export interface Tolerance {
   onsetFrames: number;
   /** Fraction of onsets that must match, in each direction. */
   onsetMatch: number;
+  /** Bands more than this many dB below the loudest reference band are skipped (default `BAND_FLOOR_DB`). */
+  bandFloorDb?: number;
+  /**
+   * Set: the onset check passes when the onset-strength curves of the two renders correlate at least this much with a
+   * lag within `onsetFrames` (see `alignment`), instead of matching peak-picked onsets. For songs of two different
+   * engines the peak picker keeps a different one of two neighbouring hits in each render, which is not a timing error.
+   */
+  onsetAlignment?: number;
 }
 
 export const DEFAULT_TOL: Tolerance = { loudnessDb: 1, bandDb: 3, onsetFrames: 100, onsetMatch: 0.95 };
 
 /** Bands quieter than this (dB below the loudest band) are skipped: their level is noise, not music. */
-const BAND_FLOOR_DB = 60;
+export const BAND_FLOOR_DB = 60;
 
 export interface Report {
   loudness: { ours: number; ref: number; diff: number; pass: boolean };
   bands: { fc: number; ours: number; ref: number; diff: number; pass: boolean }[];
-  onsets: { total: number; matched: number; extra: number; maxOffset: number; pass: boolean };
+  onsets: { total: number; matched: number; extra: number; maxOffset: number; pass: boolean; lag?: number; corr?: number };
   pass: boolean;
 }
 
@@ -233,7 +288,7 @@ export function compare(ours: Audio, ref: Audio, tol: Tolerance = DEFAULT_TOL): 
   const top = Math.max(...br.map((b) => b.db));
   const bands = bo.map((b, i) => {
     const diff = b.db - br[i].db;
-    return { fc: b.fc, ours: b.db, ref: br[i].db, diff, pass: br[i].db < top - BAND_FLOOR_DB || Math.abs(diff) <= tol.bandDb };
+    return { fc: b.fc, ours: b.db, ref: br[i].db, diff, pass: br[i].db < top - (tol.bandFloorDb ?? BAND_FLOOR_DB) || Math.abs(diff) <= tol.bandDb };
   });
   const [oo, or] = [onsets(ours), onsets(ref)];
   const fwd = matchCount(or, oo, tol.onsetFrames), back = matchCount(oo, or, tol.onsetFrames);
@@ -241,7 +296,12 @@ export function compare(ours: Audio, ref: Audio, tol: Tolerance = DEFAULT_TOL): 
   const o = {
     total: or.length, matched: fwd.n, extra: oo.length - back.n, maxOffset: fwd.max,
     pass: frac(fwd.n, or.length) >= tol.onsetMatch && frac(back.n, oo.length) >= tol.onsetMatch,
+    lag: undefined as number | undefined, corr: undefined as number | undefined,
   };
+  if (tol.onsetAlignment !== undefined) {
+    const al = alignment(ours, ref, Math.max(1024, 2 * tol.onsetFrames));
+    Object.assign(o, { lag: al.lag, corr: al.corr, pass: Math.abs(al.lag) <= tol.onsetFrames && al.corr >= tol.onsetAlignment });
+  }
   return { loudness: l, bands, onsets: o, pass: l.pass && bands.every((b) => b.pass) && o.pass };
 }
 
@@ -251,7 +311,7 @@ export function formatReport(name: string, r: Report): string {
     `${name}: ${r.pass ? "PASS" : "FAIL"}`,
     `  loudness ours ${f(r.loudness.ours)} ref ${f(r.loudness.ref)} LUFS, diff ${f(r.loudness.diff)} dB ${r.loudness.pass ? "ok" : "FAIL"}`,
     `  octaves ${r.bands.map((b) => `${b.fc}:${f(b.diff)}${b.pass ? "" : "!"}`).join(" ")}`,
-    `  onsets ${r.onsets.matched}/${r.onsets.total} matched, ${r.onsets.extra} extra, max offset ${r.onsets.maxOffset} frames ${r.onsets.pass ? "ok" : "FAIL"}`,
+    `  onsets ${r.onsets.matched}/${r.onsets.total} matched, ${r.onsets.extra} extra, max offset ${r.onsets.maxOffset} frames${r.onsets.lag === undefined ? "" : `, alignment lag ${r.onsets.lag} frames corr ${f(r.onsets.corr!)}`} ${r.onsets.pass ? "ok" : "FAIL"}`,
   ];
   return lines.join("\n");
 }
