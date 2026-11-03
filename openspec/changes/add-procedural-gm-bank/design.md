@@ -269,6 +269,32 @@ could not see the difference.
 | seed 0 (round 6) | 3.09 | 5.24 | 4.41 | 3.09 |
 | seed 10 | 2.67 | 2.56 | 2.43 | 2.85 |
 
+### D4i. Gap noise (Strings 405, round 8)
+Feedback: "there is a pattern in the 405 differences". The difference map was red on the harmonics and blue
+between them. The original has a noise floor in the middle of the gaps (bow/rosin noise, section smear). Above
+2.5 kHz most of its energy lies between the harmonics (73 % against 33 % for round 7), and the model's mid-gap
+floor sat 12–60 dB below it.
+
+`gmfit::analyze::gap_noise` adds a periodic `noise` sustain layer. It runs during analysis and again at the end
+of `correct_all` (the correction tables move the upper harmonics).
+- The noise density per band is the original's mid-gap floor (≥ per/5 bins from every harmonic) minus the
+  model's. It is averaged with the sign kept: a bin-wise positive part counts random mismatch and gave −16 dB of
+  phantom noise.
+- The harmonic spacing comes from the strongest harmonic comb. The pitch estimate was one bin off (97 against
+  98), which put the "gaps" on the upper harmonics.
+- 3 passes on the render set each band's gain to the far-gap ratio, and re-level each harmonic so that line +
+  noise = the original's region total. Upper harmonics of a section are mostly floor.
+- The noise is high-passed at 0.7·f0. Without it, band skirts and the loop pattern put rumble +10 dB below
+  60 Hz.
+- Its low-pass is picked by score from {0.18, 0.23, 0.27, 0.32}·rate and open; one wide top band cannot follow
+  the falling top octave. Open: 0.62. 5.1 kHz: 0.812.
+- Budget: the weakest `side` components go first, then the harmonic tail.
+
+Result: the mid-gap floor is within 1 dB of the original's in 6 of 8 bands, and every harmonic region up to
+h44 is within 1 dB. Score 0.8157 → 0.8122: `d_spec` and `d_onset` improve, while `d_loop` worsens
+0.29 → 0.38 (the noise adds ±0.5 dB inside the harmonic groups). This is within the regression gate and was
+written on listening feedback.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

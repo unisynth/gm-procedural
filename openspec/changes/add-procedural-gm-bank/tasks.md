@@ -115,6 +115,9 @@ skip when `GM_DLS` is unset.
   the room left after the `am` rows. Strings 405: 0.788 → 0.815.
 - [x] 6.2f Sixth feedback round (buzz in the mid spectrum): `additive` `phase_seed` (hashed random phases for
   untabled harmonics), seed picked by per-band `score::buzz_band`, scorer flag `buzz`. Strings 405 is flag-free.
+- [x] 6.2g Seventh feedback round (pattern in the difference map): `gap_noise` periodic noise sustain layer from
+  the mid-gap floor (comb-picked spacing, band/harmonic refinement on the render, hp 0.7·f0, lp by score),
+  also re-run at the end of `correct_all`. Strings 405: mid-gap floor matched, score 0.8157 → 0.8122.
 - [ ] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
 

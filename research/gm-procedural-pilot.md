@@ -156,6 +156,24 @@ over frames, so it is blind to the per-period pulse.
 Fixes: `phase_seed` (1 number instead of a 49-entry phase table), seed chosen per band, and a `buzz` flag in the
 scorer.
 
+## Round 8: "there is a pattern on the differences"
+
+Mid-gap floor (≥ 20 bins from the harmonics), dB re loop total per bin:
+
+| band (Hz) | 120 | 208 | 362 | 628 | 1091 | 1895 | 3290 | 5714 |
+|---|---|---|---|---|---|---|---|---|
+| original | −72.8 | −75.8 | −61.9 | −61.9 | −59.7 | −55.0 | −55.4 | −65.5 |
+| round 7 | −121 | −122 | −121 | −122 | −89.6 | −81.5 | −67.0 | −70.8 |
+| round 8 | −73.5 | −64.8 | −62.3 | −61.8 | −58.6 | −54.8 | −55.6 | −68.0 |
+
+Dead ends on the way:
+- A bin-wise positive difference gave phantom noise (−16 dB).
+- The pitch estimate (97 periods per loop instead of 98) put the gaps on the upper harmonics.
+- An open low-pass scored 0.62: the top band was +4–9 dB above the original over 6–10 kHz.
+- A 10 Hz high-pass let in +10 dB of rumble below 60 Hz.
+
+Score 0.8122 against 0.8157: `d_loop` +0.09 from ±0.5 dB noise inside the harmonic groups.
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.

@@ -385,7 +385,21 @@ pub fn correct_env(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
 pub fn correct_all(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     let (p, _) = correct(orig, i, start);
     let (p, _) = correct_tf(orig, i, &p);
-    let (mut p, s) = correct_env(orig, i, &p);
+    let (mut p, mut s) = correct_env(orig, i, &p);
+    // Gap noise on the corrected model (the tables move the upper harmonics), then the attack tables again;
+    // kept unless the score drops by more than 0.005 (the score barely sees the gap floor).
+    let meta = gmgen::bank::meta(i).expect("wave meta");
+    let mut q = p.clone();
+    if crate::analyze::gap_noise(i, orig, &meta, &mut q) {
+        let (q, _) = correct_tf(orig, i, &q);
+        let (q, sq) = correct_env(orig, i, &q);
+        if std::env::var_os("GMFIT_TRACE").is_some() {
+            eprintln!("gap_noise: {s} → {sq}");
+        }
+        if sq + 0.005 >= s {
+            (p, s) = (q, sq);
+        }
+    }
     // Re-pick the phase seed on the corrected sound (tables change the band levels); keep it unless the score drops.
     let before = p.clone();
     crate::analyze::pick_phase_seed(i, orig, &gmgen::bank::meta(i).expect("wave meta"), &mut p);

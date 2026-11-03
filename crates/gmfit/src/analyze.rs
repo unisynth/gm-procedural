@@ -173,6 +173,149 @@ fn envelope(x: &[f32], rate: f32, until: usize, l: &mut Layer, reference: f32) {
     }
 }
 
+/// Energy between the harmonics (bow/breath noise, a section's smear) as a periodic `noise` sustain layer.
+/// Measured in the middle of the gaps (≥ per/5 bins from every harmonic — closer bins hold vibrato sidebands the
+/// model already makes): the original's minus the model's density, averaged per band of [`bands`] (signed, so
+/// bin-level randomness cancels), shapes and levels the noise. Then 3 passes on the render move each band's gain
+/// by the original/model far-gap ratio and re-level every harmonic so line + noise in its region = the
+/// original's region total (a section's upper "harmonics" are mostly that floor). The noise is high-passed at
+/// 0.7·f0 (band skirts and the loop pattern otherwise reach DC); its low-pass is picked by score from
+/// {0.18, 0.23, 0.27, 0.32}·rate and open (one wide top band cannot follow a falling top octave).
+/// Budget: the weakest `side` components (≤ −20 dB re their harmonic) go first, then the harmonic table's tail
+/// (down to 16). Re-runnable: an existing noise sustain layer is replaced (call it again once the correction
+/// tables have moved the harmonics). Only for an additive sustain with a pitched loop, when the noise is above
+/// −40 dB re the loop. Returns whether `p` changed (only when the score does not drop by more than 0.005).
+pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
+    let Some((s, l)) = loop_of(m) else { return false };
+    let is = |x: &Layer, f: &str| FAMILIES[x.family].name == f && x.region == Region::Sustain;
+    let Some(k) = p.layers.iter().position(|x| is(x, "additive")) else { return false };
+    let mut base = p.clone();
+    base.layers.retain(|x| !is(x, "noise"));
+    if base.layers.len() >= gmgen::schema::MAX_LAYERS {
+        return false;
+    }
+    let rate = m.rate as f32;
+    let Some(f0) = pitch(orig, s, rate) else { return false };
+    let (mo, _) = dft(&orig[s..s + l]);
+    // Periods per loop: the pitch estimate can be one off (vibrato), which puts the "gaps" on the upper
+    // harmonics; take the candidate whose harmonic comb (h1–20) holds the most energy.
+    let est = (f0 * l as f32 / rate).round() as usize;
+    let comb = |q: usize| (1..=20).map(|h| h * q).take_while(|&b| b < mo.len()).map(|b| mo[b] * mo[b]).sum::<f32>();
+    let per = (est.saturating_sub(2).max(1)..=est + 2).max_by(|a, b| comb(*a).total_cmp(&comb(*b))).unwrap_or(est);
+    if per < 10 {
+        return false;
+    }
+    let (mg, _) = dft(&gmgen::render_wave(i, &base)[s..s + l]);
+    let nb = mo.len().min(mg.len());
+    let far = |b: usize| {
+        let o = b % per;
+        o.min(per - o) >= per / 5
+    };
+    let hz = |b: usize| b as f32 * rate / l as f32;
+    // Band edges as in `bands`.
+    let (lo, hi) = (120.0f32, rate * 0.45);
+    let edges: Vec<f32> = (0..=8).map(|j| lo * (hi / lo).powf(j as f32 / 8.0)).collect();
+    let mut dens = vec![0.0f32; nb];
+    let mut noise = 0.0f32;
+    for j in 0..8 {
+        let bins: Vec<usize> = (1..nb).filter(|&b| hz(b) >= edges[j] && hz(b) < edges[j + 1]).collect();
+        let f: Vec<usize> = bins.iter().copied().filter(|&b| far(b)).collect();
+        if f.is_empty() {
+            continue;
+        }
+        let d = (f.iter().map(|&b| mo[b] * mo[b] - mg[b] * mg[b]).sum::<f32>() / f.len() as f32).max(0.0);
+        for &b in &bins {
+            dens[b] = d;
+        }
+        noise += d * bins.len() as f32;
+    }
+    let total: f32 = mo.iter().skip(1).map(|v| v * v).sum();
+    if noise < total * 1e-4 {
+        return false;
+    }
+    let far_mean = |m: &[f32], (a, b): (f32, f32)| {
+        let v: Vec<f32> = (1..nb).filter(|&k| far(k) && hz(k) >= a && hz(k) < b).map(|k| m[k] * m[k]).collect();
+        v.iter().sum::<f32>() / v.len().max(1) as f32
+    };
+    let build = |lp: Option<f32>| -> Option<Params> {
+        let mut nz = Layer::new(family("noise").unwrap(), Region::Sustain);
+        // dens: half spectrum, bin b at b·rate/l. Bands far below the strongest add nothing audible.
+        nz.tables[0] = bands(&dens, rate).chunks(3).filter(|r| r[2] > -40.0).flatten().copied().collect();
+        nz.set("a", base.layers[k].get("a"));
+        nz.set("level_db", -20.0);
+        nz.set("hp", 0.7 * per as f32 * rate / l as f32);
+        if let Some(v) = lp {
+            nz.set("lp", v);
+        }
+        let mut q = base.clone();
+        q.layers.push(nz);
+        let n = q.layers.len() - 1;
+        // Budget: weakest sideband components first, then the harmonic tail.
+        while q.numbers() > MAX_NUMBERS {
+            let side = &mut q.layers[k].tables[4];
+            let weakest = side.chunks(4).enumerate().filter(|(_, r)| r[2] <= -20.0).min_by(|a, b| a.1[2].total_cmp(&b.1[2])).map(|(j, _)| j);
+            if let Some(j) = weakest {
+                side.drain(4 * j..4 * j + 4);
+            } else if q.layers[k].tables[0].len() > 16 {
+                q.layers[k].tables[0].pop();
+            } else {
+                return None;
+            }
+        }
+        calibrate(i, &mut q, n, (noise / 2.0).sqrt(), s..s + l);
+        let ranges: Vec<(f32, f32)> = q.layers[n].tables[0]
+            .chunks(3)
+            .map(|r| (r[0] / (hi / lo).powf(1.0 / 16.0), r[0] * (hi / lo).powf(1.0 / 16.0)))
+            .collect();
+        for _ in 0..3 {
+            let (mq, _) = dft(&gmgen::render_wave(i, &q)[s..s + l]);
+            for (j, &r) in ranges.iter().enumerate() {
+                let (o, g) = (far_mean(&mo, r), far_mean(&mq, r));
+                if o > 0.0 && g > 0.0 {
+                    let gain = &mut q.layers[n].tables[0][3 * j + 2];
+                    *gain = (*gain + 10.0 * (o / g).log10()).clamp(-60.0, 24.0);
+                }
+            }
+            for (j, h) in q.layers[k].tables[0].iter_mut().enumerate() {
+                let c = (j + 1) * per;
+                if c + per / 2 >= nb {
+                    break;
+                }
+                let r = c - per / 2..=c + per / 2;
+                let fb: Vec<usize> = r.clone().filter(|&b| far(b)).collect();
+                let dq = fb.iter().map(|&b| mq[b] * mq[b]).sum::<f32>() / fb.len().max(1) as f32;
+                let (eo, eq) = r.fold((0.0f32, 0.0f32), |a, b| (a.0 + mo[b] * mo[b], a.1 + mq[b] * mq[b]));
+                let nq = dq * (per + 1) as f32;
+                let line = eq - nq;
+                if line > 1e-20 {
+                    *h += (10.0 * ((eo - nq).max(0.01 * eo) / line).log10()).clamp(-40.0, 3.0);
+                }
+            }
+        }
+        q.validate().is_ok().then_some(q)
+    };
+    let before = crate::fit::score_of(orig, i, p);
+    let mut best: Option<(f32, Params)> = None;
+    for lp in [Some(0.18 * rate), Some(0.23 * rate), Some(0.27 * rate), Some(0.32 * rate), None] {
+        if let Some(q) = build(lp) {
+            let sc = crate::fit::score_of(orig, i, &q);
+            if std::env::var_os("GMFIT_TRACE").is_some() {
+                eprintln!("gap_noise lp {lp:?}: {sc}");
+            }
+            if best.as_ref().is_none_or(|b| sc > b.0) {
+                best = Some((sc, q));
+            }
+        }
+    }
+    match best {
+        Some((sc, q)) if sc + 0.005 >= before => {
+            *p = q;
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Ensemble/vibrato sustain (an additive layer with `vib_rate`): untabled harmonics get seeded random phases —
 /// Schroeder phases on a steady upper spectrum buzz. Picks the seed (0 = default phases, 1–16) whose
 /// per-band [`crate::score::buzz_band`] (1.5–2.5, 2.5–4, 4–7, 7–10 kHz) is closest to the original's.
@@ -541,6 +684,7 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
     for l in &mut p.layers {
         open_for_fit(l);
     }
+    gap_noise(i, orig, m, &mut p);
     pick_phase_seed(i, orig, m, &mut p);
     let _ = p.validate();
     WaveFile { wave: i as u32, params: p, placeholder: false, note: format!("analyze: prior {:?}", prior.kind).chars().take(80).collect() }
