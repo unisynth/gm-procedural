@@ -81,11 +81,11 @@ Every one of the 495 waves SHALL have a committed parameter set. A wave without 
 - **THEN** every wave has finite samples, a peak above -40 dBFS and no sample at full scale for more than 4 consecutive samples
 
 ### Requirement: Seamless loops
-For every looped wave, the generated samples SHALL wrap from loop end to loop start without an audible step: the jump across the wrap SHALL be no larger than 2× the wave's median absolute sample-to-sample difference inside the loop.
+For every looped wave, the generated signal SHALL be exactly periodic over the loop from the loop start on, so the wrap from loop end to loop start is an ordinary step of the signal and cannot click: rendering past the loop end SHALL reproduce the loop samples.
 
 #### Scenario: Loop wrap
-- **WHEN** a looped generated wave is played through its loop several times
-- **THEN** the wrap step is within the bound for every looped wave
+- **WHEN** a looped wave is rendered one loop length past its loop end
+- **THEN** the extra samples equal the loop samples (within 1e-5) for every looped wave
 
 ### Requirement: Partial generation
 The generator SHALL be able to build only a given set of wave indices. Waves outside the set SHALL keep their length and loop and contain silence, so indices and structure are unchanged.

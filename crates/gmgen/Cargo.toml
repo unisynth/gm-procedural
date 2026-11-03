@@ -6,8 +6,12 @@ license.workspace = true
 
 [dependencies]
 dls = { path = "../dls", features = ["write"] }
-serde_json = { version = "1", optional = true }
+serde_json = { version = "1", optional = true, features = ["preserve_order"] }
 
 [features]
 # Host-side helpers: structure JSON (de)serialisation, bank selection policy.
 std = ["dep:serde_json"]
+
+[build-dependencies]
+dls = { path = "../dls", features = ["write"] }
+serde_json = { version = "1", features = ["preserve_order"] }

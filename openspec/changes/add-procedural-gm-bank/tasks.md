@@ -31,28 +31,28 @@ skip when `GM_DLS` is unset.
 
 ## 3. Generator core (`crates/gmgen`)
 
-- [ ] 3.1 Scaffold `crates/gmgen` (`no_std` + `alloc`, depends on `dls[write]`). Add deterministic math (`sin`, `exp`,
+- [x] 3.1 Scaffold `crates/gmgen` (`no_std` + `alloc`, depends on `dls[write]`). Add deterministic math (`sin`, `exp`,
   `pow2`, `db`), an xorshift RNG, and a `clippy::disallowed_methods` config banning `f32` transcendental functions and
   `mul_add`.
   - Tests: accuracy bounds of the approximations.
   - Verify: `cargo test -p gmgen` passes and `cargo clippy -p gmgen` is clean.
-- [ ] 3.2 Add the `build.rs` that packs `structure.json` and `waves/*.json` into a binary table. It validates the
+- [x] 3.2 Add the `build.rs` that packs `structure.json` and `waves/*.json` into a binary table. It validates the
   family names, the 4-layer / 256-number budget, ranges and missing waves, and errors name the wave.
   - Tests: a fixture directory with an over-budget wave, an unknown family and a missing wave each fails with the
     expected message.
-- [ ] 3.3 Add the bank builder `build(mask) -> Vec<u8>` with the layer regions `attack` / `sustain` / `whole` (D3),
+- [x] 3.3 Add the bank builder `build(mask) -> Vec<u8>` with the layer regions `attack` / `sustain` / `whole` (D3),
   periodic loop rendering, gain, f32 → i16 round-half-even, and the masked-out waves as silence of the same length.
   - Start with the `additive`, `noise` (periodic and transient), `drum` and `metal` families. The pilot needs `metal`
     for the hi-hat.
   - Tests: wrap-step bound, determinism (built twice gives identical bytes), mask equality with the full build,
     sanity (finite, peak, no clipping run).
   - Tests: the structure fingerprint equals the original's (with `GM_DLS`).
-- [ ] 3.4 Add the optional harmonic correction stage (D4b): exact DFT gain on the loop, 129-tap linear-phase FIR on
+- [x] 3.4 Add the optional harmonic correction stage (D4b): exact DFT gain on the loop, 129-tap linear-phase FIR on
   the attack, and an empty table that leaves the output byte-identical.
   - Tests: the spec scenarios "Correction fixes loop timbre" and "No table".
-- [ ] 3.5 Commit placeholder parameter files for all 495 waves so the bank builds end to end: a single `additive`
+- [x] 3.5 Commit placeholder parameter files for all 495 waves so the bank builds end to end: a single `additive`
   layer from the loop length and pitch only. Verify: `cargo test -p gmgen` passes with every wave present.
-- [ ] 3.6 Document the generator (families, parameters, regions, correction) in `docs/synth/gm-procedural.md` and add
+- [x] 3.6 Document the generator (families, parameters, regions, correction) in `docs/synth/gm-procedural.md` and add
   the `crates/gmgen/AGENTS.md` rows. Verify the doc covers every family listed in design D4.
 
 ## 4. Scoring, render and report
