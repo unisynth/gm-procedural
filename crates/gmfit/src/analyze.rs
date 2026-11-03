@@ -304,11 +304,32 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
                 sus.set("vib_rate", n as f32 * rate / l as f32);
                 sus.set("vib_cents", depth.clamp(0.0, 100.0));
                 sus.set("vib_phase", ph - ph.floor());
-                let (am, th) = loop_am(lp, rate, n);
-                if am > 0.3 {
-                    let ph = -th / std::f32::consts::TAU - (n * s % l) as f32 / l as f32;
-                    sus.set("am_db", am.min(12.0));
-                    sus.set("am_phase", ph - ph.floor());
+                // Per-harmonic loudness modulation and the pitch curve's Fourier series, from each harmonic's
+                // complex envelope in the loop (budget permitting: 4 numbers per harmonic + 12).
+                let rows = harm.len().min(12).min((budget.saturating_sub(harm.len() + 40 + 12)) / 8);
+                let mm = loop_modulation(lp, rate, &centres, w, n, rows);
+                if rows >= 4 {
+                    let shift = |p: f32, j: usize| {
+                        let v = p - (j * n * s % l) as f32 / l as f32;
+                        v - v.floor()
+                    };
+                    let mut am = Vec::new();
+                    for (k, (cs, excess)) in mm.am.iter().enumerate() {
+                        for (j, c) in cs.iter().enumerate() {
+                            am.extend_from_slice(&[c.0.min(24.0), shift(c.1, j + 1)]);
+                        }
+                        // The table level is the unmodulated level: remove the modulation's power excess.
+                        harm[k] -= excess;
+                    }
+                    sus.tables[2] = am;
+                    sus.tables[3] = mm.vib.iter().enumerate().flat_map(|(j, c)| [c.0.min(100.0), shift(c.1, j + 1)]).collect();
+                } else {
+                    let (am, th) = loop_am(lp, rate, n);
+                    if am > 0.3 {
+                        let ph = -th / std::f32::consts::TAU - (n * s % l) as f32 / l as f32;
+                        sus.set("am_db", am.min(12.0));
+                        sus.set("am_phase", ph - ph.floor());
+                    }
                 }
             } else if prior.vib_cents > 0.0 {
                 sus.set("vib_rate", prior.vib_rate);
@@ -484,6 +505,80 @@ fn loop_vibrato(lp: &[f32], rate: f32, est: f32) -> Option<(f32, usize, f32, f32
         })
         .max_by(|x, y| x.1.total_cmp(&y.1))?;
     (best.1 >= 4.0 && best.1 * best.1 / 2.0 >= 0.3 * var).then_some((mean, best.0, best.1, best.2))
+}
+
+/// Per-harmonic and pitch modulation of a loop (see `loop_modulation`).
+struct LoopMod {
+    /// Per harmonic: (dB, phase) at 1×…4× base, power excess dB of that modulation.
+    am: Vec<([(f32, f32); 4], f32)>,
+    /// Pitch curve: (cents, phase) at 1×…6× base.
+    vib: Vec<(f32, f32)>,
+}
+
+/// Complex envelope of each harmonic (loop DFT bins within ±`w` of its centre, analytic, inverse DFT): its dB
+/// envelope projected on the base rate `n` cycles/loop and 2n gives the `am` rows; harmonic 1's smoothed
+/// instantaneous frequency (cents from the mean) projected on 1…6 × base gives the `vib` rows. (A median over
+/// harmonics 1–4 flattened it: each harmonic's own loudness dips disturb its phase differently.)
+/// Phases are cycles relative to the loop start (t = 0 at `s`); the caller moves them to sample 0.
+fn loop_modulation(lp: &[f32], rate: f32, centres: &[usize], w: usize, n: usize, rows: usize) -> LoopMod {
+    let l = lp.len();
+    let mut spec: Vec<Complex32> = lp.iter().map(|v| Complex32::new(*v, 0.0)).collect();
+    FftPlanner::<f32>::new().plan_fft_forward(l).process(&mut spec);
+    let inv = FftPlanner::<f32>::new().plan_fft_inverse(l);
+    let tau = std::f32::consts::TAU;
+    let project = |e: &[f32], m: usize| -> (f32, f32) {
+        let (mut a, mut b) = (0.0f32, 0.0f32);
+        for (i, v) in e.iter().enumerate() {
+            let x = tau * (m * i % l) as f32 / l as f32;
+            a += v * x.cos();
+            b += v * x.sin();
+        }
+        let (a, b) = (2.0 * a / e.len() as f32, 2.0 * b / e.len() as f32);
+        // e ≈ |c|·cos(2π·m·t + arg c), c = a − ib.
+        ((a * a + b * b).sqrt(), (-b).atan2(a) / tau)
+    };
+    let envelope = |c: usize| -> Vec<Complex32> {
+        let mut z = vec![Complex32::new(0.0, 0.0); l];
+        for b in c.saturating_sub(w).max(1)..=(c + w).min(l / 2) {
+            z[b] = spec[b] * 2.0;
+        }
+        inv.process(&mut z);
+        z.iter().map(|v| v / l as f32).collect()
+    };
+    let mut am = Vec::new();
+    let mut pitch: Vec<Vec<f32>> = Vec::new();
+    for (k, &c) in centres.iter().enumerate().take(rows.max(1)) {
+        let z = envelope(c);
+        let e: Vec<f32> = z.iter().map(|v| 20.0 * v.norm().max(1e-9).log10()).collect();
+        let mean = e.iter().sum::<f32>() / l as f32;
+        let d: Vec<f32> = e.iter().map(|v| v - mean).collect();
+        if k < rows {
+            let cs = [project(&d, n), project(&d, 2 * n), project(&d, 3 * n), project(&d, 4 * n)];
+            let model = |i: usize| {
+                let t = i as f32 / l as f32;
+                cs.iter().enumerate().map(|(j, c)| c.0 * (tau * ((j + 1) as f32 * n as f32 * t + c.1)).cos()).sum::<f32>()
+            };
+            let excess = 10.0 * ((0..l).map(|i| 10f32.powf(model(i) / 10.0)).sum::<f32>() / l as f32).log10();
+            am.push((cs, excess));
+        }
+        if k < 1 {
+            // Instantaneous frequency (cents from the harmonic's mean), smoothed over 300 samples.
+            let f: Vec<f32> = (0..l).map(|i| (z[(i + 1) % l] * z[i].conj()).arg() * rate / tau / (k + 1) as f32).collect();
+            let m = f.iter().sum::<f32>() / l as f32;
+            let h = 150usize;
+            let sm: Vec<f32> = (0..l).map(|i| (0..2 * h + 1).map(|j| f[(i + l + j - h) % l]).sum::<f32>() / (2 * h + 1) as f32).collect();
+            pitch.push(sm.iter().map(|v| 1200.0 * (v.max(1.0) / m.max(1.0)).log2()).collect());
+        }
+    }
+    let med: Vec<f32> = (0..l)
+        .map(|i| {
+            let mut v: Vec<f32> = pitch.iter().map(|p| p[i]).collect();
+            v.sort_by(f32::total_cmp);
+            if v.is_empty() { 0.0 } else { (v[(v.len() - 1) / 2] + v[v.len() / 2]) / 2.0 }
+        })
+        .collect();
+    let vib = (1..=6).map(|j| project(&med, j * n)).collect();
+    LoopMod { am, vib }
 }
 
 /// Loop loudness modulation at `n` cycles per loop: RMS (dB) over 20 ms windows of the tiled loop, projected on

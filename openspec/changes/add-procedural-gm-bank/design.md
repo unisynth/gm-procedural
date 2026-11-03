@@ -202,6 +202,30 @@ These came from the round-2 listening feedback ("is there any way to improve?").
   envelope of a delayed layer. Each of them broke a hand-over or a grid lock when fitted.
 - The attack time comes from a 0.5 ms envelope.
 
+### D4f. Per-harmonic modulation of a vibrato loop (Strings 405, round 5)
+Listening: "405 needs to improve". Measured on the loop's per-harmonic complex envelopes (cluster bins → analytic
+→ inverse DFT):
+- The harmonic levels already matched within 0.3 dB.
+- Each harmonic has its own loudness curve: up to ±5.7 dB (h2) against the global ±1.5 dB.
+- The pitch curve is not a sine: the components at 4–6× the loop rate are as strong as at 1×.
+
+Tried and measured:
+- Fixed body resonance (gain = H(k·f(t)), slope and curvature per harmonic): no better than sinusoids, so rejected.
+- Ensemble `spread` on top: −0.14 score, and it *reduced* the loudness wobble (random phases cancel the locked
+  modulation), so rejected.
+- Random per-harmonic modulation (`am_rand`): worse on every measure, so removed.
+
+Adopted:
+- `additive` table `am`: per harmonic, [dB, phase] at 1×–4× the vibrato rate (8 numbers; the analysis fills the
+  first 12 harmonics). The harmonic table holds the unmodulated level, with the modulation's power excess removed.
+- `additive` table `vib`: the pitch curve as [cents, phase] at 1×–6× the rate, overriding `vib_cents`/`vib_phase`.
+  It is taken from harmonic 1's instantaneous frequency, because a median over harmonics 1–4 flattened it.
+- Both run on the vibrato phasor, so the loop stays exact. The 4-term rows leave 0.3 dB residual on h1 and 1.2 dB
+  on h3; above h8 the loudness fluctuation is irregular (3–5 dB even with 8 terms) and stays unmodelled.
+
+*Measured:* Strings 0.674 → 0.788; loop loudness sd 1.21 dB against the original's 1.20; pitch sd 11.1 against 11.9
+cents.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

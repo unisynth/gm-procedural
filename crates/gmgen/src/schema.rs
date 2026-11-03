@@ -112,7 +112,15 @@ pub const FAMILIES: &[Family] = &[
     Family {
         name: "additive",
         scalars: &ADDITIVE,
-        tables: &[Table { name: "harm", width: 1, max_rows: 240 }, Table { name: "phase", width: 1, max_rows: 32 }],
+        tables: &[
+            Table { name: "harm", width: 1, max_rows: 240 },
+            Table { name: "phase", width: 1, max_rows: 32 },
+            // Per-harmonic loudness modulation at 1×…4× the vibrato rate: [dB, phase] × 4 per harmonic.
+            Table { name: "am", width: 8, max_rows: 32 },
+            // Vibrato pitch curve as a Fourier series over the vibrato rate: [cents, phase] for 1×, 2×, … (overrides
+            // `vib_cents`/`vib_phase`).
+            Table { name: "vib", width: 2, max_rows: 8 },
+        ],
         periodic: true,
     },
     // `bands`: [centre Hz, Q, gain dB].

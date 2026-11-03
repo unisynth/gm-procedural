@@ -107,6 +107,9 @@ skip when `GM_DLS` is unset.
     clusters, string layer kept at full level; structural scalars kept out of the fit.
   - Pilot (new score): kick 0.70, snare 0.68, hat 0.65, Bass 0.89, Strings 0.67, Piano 0.75 (stiff-string, now
     committed).
+- [x] 6.2d Fourth feedback round ("405 needs to improve"): `additive` tables `am` (per-harmonic loudness curve,
+  1×–4× vibrato rate) and `vib` (pitch curve Fourier series 1×–6×), analysis `loop_modulation` from per-harmonic
+  complex envelopes. Strings 405: 0.674 → 0.788.
 - [ ] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
 

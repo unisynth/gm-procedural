@@ -1,6 +1,7 @@
 //! `additive`: harmonic table (dB per harmonic) with tail slope, stiff-string inharmonicity, unison detune,
 //! per-partial extra decay, odd/even balance, onset brightness tilt, attack pitch scoop and vibrato (as phase
-//! modulation, so loops stay exactly periodic), amplitude modulation `am_db` locked to the vibrato phasor, and
+//! modulation, so loops stay exactly periodic; pitch curve as a Fourier series `vib` table), amplitude modulation
+//! `am_db` and per-harmonic `am` table (1×…4× rate) locked to the vibrato phasor, and
 //! ensemble `spread`: each partial becomes a Gaussian cluster of
 //! components (sd `spread` cents, spacing ≥ one grid step, ≤ 25 components, power preserved, fixed pseudo-random
 //! phases) on the loop grid, so a chorus of players loops exactly. Amplitudes run at control rate (every `CR`
@@ -44,21 +45,45 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         Vec::new()
     };
     let am_db = l.get("am_db");
-    let vib_n = if l.get("vib_cents") > 0.0 || am_db > 0.0 { ctx.grid(l.get("vib_rate")) } else { 0 };
+    let (am_tab, vib_tab) = (l.table("am"), l.table("vib"));
+    let modulated = l.get("vib_cents") > 0.0 || am_db > 0.0 || !am_tab.is_empty() || !vib_tab.is_empty();
+    let vib_n = if modulated { ctx.grid(l.get("vib_rate")) } else { 0 };
     let vib_hz = ctx.hz(vib_n);
-    let vib: Vec<f32> = if vib_n > 0 {
+    // Modulation phasor (cycles of the vibrato rate, exact on the loop grid).
+    let modu: Vec<f32> = if vib_n > 0 {
         let mut p = Phasor::new(vib_n, ctx.den);
-        let ph = l.get("vib_phase");
-        (0..n).map(|_| sin_cycles(p.tick() + ph)).collect()
+        (0..n).map(|_| p.tick()).collect()
     } else {
         Vec::new()
     };
-    let vib_dev = crate::math::exp2(l.get("vib_cents") / 1200.0) - 1.0;
+    // Pitch curve Σ a_n·cos(2π(φ_n + n·u)) (cents → ratio a); as phase modulation the partial at fr Hz gains
+    // fr·pm cycles, pm = Σ a_n/(2π·n·rate)·sin(2π(φ_n + n·u)).
+    let terms: Vec<(f32, f32)> = if vib_tab.is_empty() {
+        alloc::vec![(l.get("vib_cents"), l.get("vib_phase"))]
+    } else {
+        vib_tab.chunks(2).map(|r| (r[0], r[1])).collect()
+    };
+    let vib: Vec<f32> = if vib_n > 0 && terms.iter().any(|t| t.0 != 0.0) {
+        modu.iter()
+            .map(|u| {
+                terms
+                    .iter()
+                    .enumerate()
+                    .map(|(j, &(c, ph))| {
+                        let m = (j + 1) as f32;
+                        (crate::math::exp2(c / 1200.0) - 1.0) / (core::f32::consts::TAU * m * vib_hz)
+                            * sin_cycles(ph + m * u)
+                    })
+                    .sum()
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     // Amplitude modulation locked to the vibrato phasor (periodic on the loop like the vibrato).
     let am: Vec<f32> = if am_db > 0.0 && vib_n > 0 {
-        let mut p = Phasor::new(vib_n, ctx.den);
         let ph = l.get("am_phase");
-        (0..n).map(|_| db(am_db * crate::math::cos_cycles(p.tick() + ph))).collect()
+        modu.iter().map(|u| db(am_db * crate::math::cos_cycles(u + ph))).collect()
     } else {
         Vec::new()
     };
@@ -137,20 +162,29 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
                 comps.push((ctx.grid(fu), 1.0, if u == 0 { 0.0 } else { ph }));
             }
         }
+        // This harmonic's own loudness modulation (body resonances swept by the vibrato).
+        // Row: [dB, phase] at 1×…4× rate.
+        let hm: Vec<f32> = match am_tab.chunks(8).nth(k - 1) {
+            Some(r) if vib_n > 0 && r.chunks(2).any(|t| t[0] != 0.0) => modu
+                .iter()
+                .map(|u| db(r.chunks(2).enumerate().map(|(j, t)| t[0] * crate::math::cos_cycles(t[1] + (j + 1) as f32 * u)).sum()))
+                .collect(),
+            _ => Vec::new(),
+        };
         for &(nk, wamp, wph) in &comps {
             if nk == 0 || ctx.hz(nk) > nyq {
                 continue;
             }
             let fr = ctx.hz(nk);
-            let beta = if vib_n > 0 { fr * vib_dev / (core::f32::consts::TAU * vib_hz) } else { 0.0 };
+
             let mut ph = Phasor::new(nk, ctx.den);
             for (i, o) in out.iter_mut().enumerate() {
                 let mut c = ph.tick() + ph0 + wph;
                 if !scoop.is_empty() {
                     c += fr * scoop[i];
                 }
-                if beta != 0.0 {
-                    c += beta * vib[i];
+                if !vib.is_empty() {
+                    c += fr * vib[i];
                 }
                 let a = if i >= hold {
                     amp[steps - 1]
@@ -159,6 +193,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
                     amp[j] + (amp[j + 1] - amp[j]) * w
                 };
                 let a = if am.is_empty() { a } else { a * am[i] };
+                let a = if hm.is_empty() { a } else { a * hm[i] };
                 *o += wamp * a * sin_cycles(c);
             }
         }

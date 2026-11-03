@@ -88,6 +88,8 @@ structural (the string-attack hand-over), so `fit` never tunes it.
 | `unison`, `detune` | 1…8, 0…50 | 1, 0 | voices and the cents spread between them |
 | `vib_phase` | 0…1 cycles | 0 | vibrato phase at sample 0 (deviation ∝ cos(2π(vib_phase + rate·t))) |
 | `am_db`, `am_phase` | 0…12 dB, 0…1 | 0, 0 | amplitude modulation locked to the vibrato phasor (body-resonance wobble of a vibrato loop) |
+| table `am` | rows of 8 | – | per-harmonic loudness curve: [dB, phase] at 1×–4× the vibrato rate (row k = harmonic k), on the vibrato phasor |
+| table `vib` | rows of 2, ≤ 8 | – | pitch curve: [cents, phase] at 1×, 2×, … the vibrato rate; overrides `vib_cents`/`vib_phase` |
 | `spread` | 0…50 cents | 0 | ensemble: each partial is a Gaussian cluster of components (sd in cents, spacing ≥ 1 grid step, ≤ 25 components, power kept, fixed pseudo-random phases) on the loop grid. Replaces `unison` |
 | `vib_rate`, `vib_cents` | 0…12, 0…100 | 0, 0 | vibrato as phase modulation, rate snapped to the loop grid |
 | `scoop_cents`, `scoop_t` | ±200, 0.001…1 | 0, 0.03 | onset pitch scoop; gone by the loop start |
@@ -182,6 +184,10 @@ vowels, Hammond footages, piano B, vibrato and scoop.
   - Loop vibrato (`loop_vibrato`): the pitch track of harmonic 1 over the tiled loop sets the periods per loop from
     its mean. A sinusoid at whole cycles per loop gives `vib_rate`/`vib_cents`/`vib_phase`, and the loudness track
     gives `am_db`/`am_phase`. With vibrato, neither `spread` nor `unison` is set.
+  - With vibrato and the budget for it, `loop_modulation` reads each harmonic's complex envelope (its cluster bins,
+    analytic, inverse DFT). The `am` rows come from the dB envelope projected on 1×–4× the rate (first 12
+    harmonics; the harmonic table is lowered by the modulation's power excess). The `vib` rows come from harmonic
+    1's smoothed instantaneous frequency projected on 1×–6×.
   - Inharmonic priors centre each loop cluster on the stretched partial (running B).
   - Drums get a broadband `noise` layer like snares (bands below 2× the body removed, level from the energy share
     above it).
@@ -230,7 +236,7 @@ result is kept only if better.
 | Piano 293 | 0.74 | 0.84 | 0.85 (stiff-string alternative 0.84) |
 | Fingered Bass 240 | 0.956 | 0.985 | 0.985 |
 
-Round 4 under the A-weighted score with `d_onset`: kick 0.70 (from 0.41 with the drum noise layer), snare 0.68,
+Round 5: Strings 0.79 (per-harmonic `am` + `vib` tables). Round 4 under the A-weighted score with `d_onset`: kick 0.70 (from 0.41 with the drum noise layer), snare 0.68,
 hat 0.65, Bass 0.89, Strings 0.67 (loop vibrato + AM), Piano 0.75 (stiff string + stretched loop).
 
 | Measured (pilot preparation) | Score |

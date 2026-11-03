@@ -98,6 +98,26 @@ Scores on the new scale: kick 0.70, snare 0.68, hat 0.65, Bass 0.89, Strings 0.6
 committed). Organ 1's analysis drops to 0.88: `d_onset` sees its key click (2–3 kHz, first 10 ms), which is real and
 not modelled.
 
+## Round 5: "405 needs to improve"
+
+Per-harmonic complex envelopes of the loop:
+
+| harmonic | loudness sd (dB) | residual after 2 / 4 / 8 Fourier terms |
+|---|---|---|
+| 1 | 1.29 | 0.79 / 0.29 / 0.18 |
+| 2 | 5.99 | 3.29 / 3.12 / 2.32 |
+| 3 | 3.94 | 1.29 / 1.21 / 0.58 |
+| 5 | 4.63 | 1.97 / 1.52 / 1.42 |
+| 10 | 6.20 | 6.09 / 4.30 / 3.49 |
+| 20 | 5.33 | 4.98 / 4.82 / 4.06 |
+
+- **Low harmonics** (most of the power) follow the vibrato with their own depths and phases (all phases 0 or ½:
+  symmetric about the loop start). A fixed body resonance did not explain them better than sinusoids.
+- **Above h8** the fluctuation is irregular, like several players beating. Random spread or random modulation
+  only made it worse (it cancels the locked part), so it stays unmodelled.
+- **Result:** the `am` (4 terms × 12 harmonics) and `vib` (6 terms) tables. Score 0.674 → 0.788, loudness sd 1.21
+  against 1.20 dB, pitch sd 11.1 against 11.9 cents. The cluster widths are still about 2/3 of the original's.
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.
