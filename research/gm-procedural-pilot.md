@@ -135,6 +135,27 @@ exactly.
   and 15/17 cents (original/round 5: 12/8, 15/8, 17/7).
 - Pitch sd 10.5 against 11.9 cents, and loudness sd 1.13 against 1.20 dB.
 
+## Round 7: "buzz in the centre of the spectrum"
+
+Upper-band peak/mean power within a period (0.5 ms frames):
+
+| band | 1.5–2.5 | 2.5–4 | 4–7 | 7–10 kHz |
+|---|---|---|---|---|
+| original | 2.48 | 2.96 | 2.83 | 3.00 |
+| round 6 (Schroeder phases) | 2.80 | 5.55 | 5.48 | 5.68 |
+
+The levels matched within 0.3 dB, and the score stayed at 0.815 for every phase variant. The scorer averages
+over frames, so it is blind to the per-period pulse.
+
+| phases for h8+ | 2.5–10 kHz buzz | score |
+|---|---|---|
+| Schroeder | 4.96 | 0.8154 |
+| measured | 2.24 | 0.8153 |
+| random | 2.4–2.9 | 0.815–0.816 |
+
+Fixes: `phase_seed` (1 number instead of a 49-entry phase table), seed chosen per band, and a `buzz` flag in the
+scorer.
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.

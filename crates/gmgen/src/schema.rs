@@ -50,7 +50,7 @@ macro_rules! with_env {
     };
 }
 
-static ADDITIVE: [Scalar; 23] = with_env![
+static ADDITIVE: [Scalar; 24] = with_env![
         s("level_db", -80.0, 24.0, 0.0),
         s("cents", -1200.0, 1200.0, 0.0),
         s("tail", -48.0, 0.0, -96.0 / 8.0), // dB/octave beyond the table
@@ -69,6 +69,7 @@ static ADDITIVE: [Scalar; 23] = with_env![
         s("scoop_cents", -200.0, 200.0, 0.0),
         s("scoop_t", 0.001, 1.0, 0.03),
         s("spread", 0.0, 50.0, 0.0), // ensemble: each partial a Gaussian cluster, sd in cents (replaces unison)
+        s("phase_seed", 0.0, 255.0, 0.0), // 0: Schroeder default phases; n: seeded random phases (ensemble, no buzz)
 ];
 
 static NOISE: [Scalar; 12] = with_env![

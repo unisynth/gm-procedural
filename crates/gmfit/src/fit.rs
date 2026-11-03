@@ -61,7 +61,7 @@ fn vars(p: &Params, only: Option<&[String]>) -> Vec<Var> {
     let keep = |name: String| only.is_none_or(|o| o.contains(&name));
     for (l, layer) in p.layers.iter().enumerate() {
         for (k, s) in FAMILIES[layer.family].scalars.iter().enumerate() {
-            if layer.explicit[k] && keep(format!("{l}.{}", s.name)) && !matches!(s.name, "unison" | "dly" | "spread")
+            if layer.explicit[k] && keep(format!("{l}.{}", s.name)) && !matches!(s.name, "unison" | "dly" | "spread" | "phase_seed")
                 // On a loop the vibrato rate snaps to whole cycles per loop: structural there.
                 && !(s.name == "vib_rate" && layer.region == Region::Sustain)
                 // A delayed layer (string hand-over) keeps its envelope: it must be at full level at the loop.
@@ -385,7 +385,12 @@ pub fn correct_env(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
 pub fn correct_all(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     let (p, _) = correct(orig, i, start);
     let (p, _) = correct_tf(orig, i, &p);
-    correct_env(orig, i, &p)
+    let (mut p, s) = correct_env(orig, i, &p);
+    // Re-pick the phase seed on the corrected sound (tables change the band levels); keep it unless the score drops.
+    let before = p.clone();
+    crate::analyze::pick_phase_seed(i, orig, &gmgen::bank::meta(i).expect("wave meta"), &mut p);
+    let s2 = score_of(orig, i, &p);
+    if s2 + 0.002 >= s { (p, s2) } else { (before, s) }
 }
 
 /// Alternates `fit` (scalars, with the correction tables in place) and `correct_all` for `rounds` rounds, so model

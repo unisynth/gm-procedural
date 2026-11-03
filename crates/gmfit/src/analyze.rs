@@ -173,6 +173,42 @@ fn envelope(x: &[f32], rate: f32, until: usize, l: &mut Layer, reference: f32) {
     }
 }
 
+/// Ensemble/vibrato sustain (an additive layer with `vib_rate`): untabled harmonics get seeded random phases —
+/// Schroeder phases on a steady upper spectrum buzz. Picks the seed (0 = default phases, 1–16) whose
+/// per-band [`crate::score::buzz_band`] (1.5–2.5, 2.5–4, 4–7, 7–10 kHz) is closest to the original's.
+pub fn pick_phase_seed(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) {
+    let Some(k) = p.layers.iter().position(|l| FAMILIES[l.family].name == "additive" && l.try_get("vib_rate").unwrap_or(0.0) > 0.0) else {
+        return;
+    };
+    let Some((ls, _)) = loop_of(m) else { return };
+    let Some(f) = pitch(orig, ls, m.rate as f32) else { return };
+    let rate = m.rate as f32;
+    let per = (rate / f).round() as usize;
+    let played = |x: &[f32]| crate::audio::played(x, m, 0.5);
+    let skip = (0.1 * rate) as usize;
+    let bands = [(1500.0, Some(2500.0)), (2500.0, Some(4000.0)), (4000.0, Some(7000.0)), (7000.0, Some(10000.0f32.min(0.45 * rate)))];
+    let b = |x: &[f32]| -> Vec<f32> {
+        let y = played(x);
+        let y = &y[skip.min(y.len())..];
+        bands.iter().map(|&(lo, hi)| crate::score::buzz_band(y, rate, per, lo, hi)).collect()
+    };
+    let target = b(orig);
+    let mut best = (f32::MAX, 0.0);
+    for seed in 0..=16 {
+        let mut q = p.clone();
+        q.layers[k].set("phase_seed", seed as f32);
+        let bg = b(&gmgen::render_wave(i, &q));
+        let d: f32 = bg.iter().zip(&target).map(|(g, o)| (g - o).abs()).sum();
+        if std::env::var_os("GMFIT_TRACE").is_some() {
+            eprintln!("phase_seed {seed}: {bg:.2?} vs {target:.2?} → {d:.2}");
+        }
+        if d < best.0 - 0.05 {
+            best = (d, seed as f32);
+        }
+    }
+    p.layers[k].set("phase_seed", best.1);
+}
+
 /// Initial parameters for wave `i`.
 pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
     let prior = prior_for_wave(i);
@@ -505,6 +541,7 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
     for l in &mut p.layers {
         open_for_fit(l);
     }
+    pick_phase_seed(i, orig, m, &mut p);
     let _ = p.validate();
     WaveFile { wave: i as u32, params: p, placeholder: false, note: format!("analyze: prior {:?}", prior.kind).chars().take(80).collect() }
 }

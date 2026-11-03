@@ -249,6 +249,26 @@ Rejected:
 - `spread` on the harmonics past the `am` rows: −0.02.
 - Partials up to 0.495·rate: +0.008 on 405, but it regressed 33 placeholder waves.
 
+### D4h. Phase seed against buzz (Strings 405, round 7)
+Feedback: "much better, but there is a buzz in the centre of the spectrum".
+
+Harmonics without a stored phase used Schroeder phases. On a steady upper spectrum these line up into one
+sharp pulse per period. Above 2.5 kHz the generated sound peaked at about 5× its average power within each
+period, against about 3× in the original. The levels matched within 0.3 dB, and the score (frame metrics)
+could not see the difference.
+
+- New `additive` scalar `phase_seed`: 0 keeps the Schroeder phases, so no other wave changes; n gives hashed
+  random phases. It is excluded from the CMA-ES fit.
+- `gmfit` picks the seed from 0–16 whose per-band `buzz` best matches the original's in the bands 1.5–2.5,
+  2.5–4, 4–7 and 7–10 kHz. It picks during analysis and again after the correction tables.
+- New scorer flag `buzz`: upper band more than 1.4× the original's buzz. It does not change the score.
+
+| | 1.5–2.5 | 2.5–4 | 4–7 | 7–10 kHz |
+|---|---|---|---|---|
+| original | 2.67 | 2.64 | 2.67 | 2.55 |
+| seed 0 (round 6) | 3.09 | 5.24 | 4.41 | 3.09 |
+| seed 10 | 2.67 | 2.56 | 2.43 | 2.85 |
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

@@ -113,6 +113,8 @@ skip when `GM_DLS` is unset.
 - [x] 6.2e Fifth feedback round ("retry", budget may grow): `MAX_NUMBERS` 256 → 512; `additive` table `side`
   (sideband components per harmonic on the loop grid); analysis fills harmonics 1–12 to 99.5 % energy within
   the room left after the `am` rows. Strings 405: 0.788 → 0.815.
+- [x] 6.2f Sixth feedback round (buzz in the mid spectrum): `additive` `phase_seed` (hashed random phases for
+  untabled harmonics), seed picked by per-band `score::buzz_band`, scorer flag `buzz`. Strings 405 is flag-free.
 - [ ] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
 

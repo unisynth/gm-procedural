@@ -20,6 +20,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
     let f0 = ctx.f0 * crate::math::exp2(l.get("cents") / 1200.0);
     let harm = l.table("harm");
     let phase = l.table("phase");
+    let phase_seed = (l.get("phase_seed") + 0.5) as u32;
     let (tail, b) = (l.get("tail"), l.get("inharm"));
     let (even, level) = (db(l.get("even_db")), db(l.get("level_db")));
     let unison = (l.get("unison") + 0.5) as usize;
@@ -127,7 +128,18 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
             }
             *v = x;
         }
-        let ph0 = phase.get(k - 1).copied().unwrap_or(-(kf * (kf - 1.0)) / (2.0 * k_table.max(8) as f32));
+        // Harmonics without a stored phase: Schroeder phases (low crest for a steady tone), or with `phase_seed`
+        // hashed random phases — a section's upper partials are scattered, and Schroeder phases on a steady upper
+        // spectrum line up into one sharp pulse per period (audible buzz).
+        let ph0 = phase.get(k - 1).copied().unwrap_or_else(|| {
+            if phase_seed > 0 {
+                let h = (k as u32).wrapping_mul(2_654_435_761) ^ phase_seed.wrapping_mul(0x9E37_79B9);
+                let h = (h ^ (h >> 15)).wrapping_mul(0x85EB_CA6B);
+                (h >> 8) as f32 / (1u32 << 24) as f32
+            } else {
+                -(kf * (kf - 1.0)) / (2.0 * k_table.max(8) as f32)
+            }
+        });
         // Components: (grid frequency, amplitude factor, phase offset in cycles).
         let mut comps: Vec<(u32, f32, f32)> = Vec::new();
         let sides: Vec<&[f32]> = side_tab.chunks(4).filter(|r| (r[0] + 0.5) as usize == k).collect();

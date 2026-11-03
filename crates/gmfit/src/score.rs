@@ -308,6 +308,47 @@ pub fn pitch(x: &[f32], from: usize, rate: f32) -> Option<f32> {
     Some(rate / (k as f32 + off))
 }
 
+/// Buzz: within-period peakiness of the content above 2.5 kHz — mean over periods of (peak of the 0.5 ms
+/// power) / (mean power). Phase-aligned upper partials pulse once per period (≈5 for a steady Schroeder
+/// spectrum); a string section's scattered partials stay near 3. `period` in samples; 0 when silent.
+pub fn buzz(x: &[f32], rate: f32, period: usize) -> f32 {
+    buzz_band(x, rate, period, 2500.0, None)
+}
+
+/// [`buzz`] of the band `lo`…`hi` Hz (4th-order Butterworth-ish edges; `hi` None = no low-pass).
+pub fn buzz_band(x: &[f32], rate: f32, period: usize, lo: f32, hi: Option<f32>) -> f32 {
+    let biquad = |y: &mut [f32], f: f32, high: bool| {
+        let w = std::f32::consts::TAU * f / rate;
+        let (cw, al) = (w.cos(), w.sin() / (2.0 * std::f32::consts::FRAC_1_SQRT_2));
+        let a0 = 1.0 + al;
+        let (b0, b1) = if high { ((1.0 + cw) / 2.0 / a0, -(1.0 + cw) / a0) } else { ((1.0 - cw) / 2.0 / a0, (1.0 - cw) / a0) };
+        let (a1, a2) = (-2.0 * cw / a0, (1.0 - al) / a0);
+        let (mut x1, mut x2, mut y1, mut y2) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for v in y.iter_mut() {
+            let o = b0 * *v + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2;
+            (x2, x1, y2, y1) = (x1, *v, y1, o);
+            *v = o;
+        }
+    };
+    let mut y = x.to_vec();
+    for _ in 0..2 {
+        biquad(&mut y, lo, true);
+        if let Some(h) = hi {
+            biquad(&mut y, h, false);
+        }
+    }
+    let k = ((0.0005 * rate) as usize).max(1);
+    let p: Vec<f32> = y.windows(k).map(|w| w.iter().map(|v| v * v).sum::<f32>() / k as f32).collect();
+    if period < 4 || p.len() < 2 * period {
+        return 0.0;
+    }
+    let ch: Vec<f32> = p.chunks_exact(period).filter_map(|c| {
+        let m = c.iter().sum::<f32>() / period as f32;
+        (m > 1e-12).then(|| c.iter().copied().fold(0.0, f32::max) / m)
+    }).collect();
+    if ch.is_empty() { 0.0 } else { ch.iter().sum::<f32>() / ch.len() as f32 }
+}
+
 /// Scores `synth` against `orig` (both raw wave samples of length `m.len`).
 pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     let rate = m.rate as f32;
@@ -355,6 +396,18 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
             flags.push("pitch_off");
         }
     }
+    // Buzz (not in the score — a per-period effect the frame metrics average out): upper band clearly more
+    // pulse-like than the original's, where it carries audible energy.
+    if let (Some(f), Some(_)) = (fa, loop_of(m)) {
+        let per = (rate / f).round() as usize;
+        let skip = (0.1 * rate) as usize;
+        if a.len() > skip + 4 * per {
+            let (ba, bb) = (buzz(&a[skip..], rate, per), buzz(&b[skip..], rate, per));
+            if ba > 0.0 && bb > 1.4 * ba {
+                flags.push("buzz");
+            }
+        }
+    }
     if let Some((s, l)) = loop_of(m) {
         // Curvature across the wrap (end → start) against the largest curvature inside the loop (last two
         // samples excluded, they take part in the wrap): an ordinary periodic join stays well below 4×.
@@ -399,6 +452,24 @@ mod tests {
         let s = score(&x, &vec![0.0; 4000], &m);
         assert!(s.score < 0.1, "{}", s.score);
         assert!(s.flags.contains(&"silent"));
+    }
+
+    #[test]
+    fn aligned_upper_partials_buzz() {
+        // 40 equal harmonics of 220 Hz: in-phase partials pulse once per period, scattered phases do not.
+        let (rate, f) = (22050.0f32, 220.0f32);
+        let tone = |ph: &dyn Fn(usize) -> f32| -> Vec<f32> {
+            (0..11025).map(|n| (1..=40).map(|k| (std::f32::consts::TAU * (k as f32 * f * n as f32 / rate + ph(k))).cos()).sum::<f32>() / 40.0).collect()
+        };
+        let aligned = tone(&|_| 0.0);
+        // (A phase linear in k is only a delay — still one pulse per period; mix the hash.)
+        let scattered = tone(&|k| {
+            let h = (k as u32).wrapping_mul(2_654_435_761);
+            ((h ^ (h >> 15)).wrapping_mul(0x85EB_CA6B) >> 8) as f32 / (1u32 << 24) as f32
+        });
+        let per = (rate / f).round() as usize;
+        let (ba, bs) = (buzz(&aligned, rate, per), buzz(&scattered, rate, per));
+        assert!(ba > 1.5 * bs, "aligned {ba} scattered {bs}");
     }
 
     #[test]

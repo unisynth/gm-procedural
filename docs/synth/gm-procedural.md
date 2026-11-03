@@ -91,6 +91,7 @@ structural (the string-attack hand-over), so `fit` never tunes it.
 | table `am` | rows of 8 | – | per-harmonic loudness curve: [dB, phase] at 1×–4× the vibrato rate (row k = harmonic k), on the vibrato phasor |
 | table `vib` | rows of 2, ≤ 8 | – | pitch curve: [cents, phase] at 1×, 2×, … the vibrato rate; overrides `vib_cents`/`vib_phase` |
 | table `side` | rows of 4, ≤ 96 | – | sideband components [harmonic, loop-bin offset, dB re harmonic level, phase]; a harmonic with rows is exactly these components (its AM/FM included), with no unison/spread/vib/am |
+| `phase_seed` | 0…255 | 0 | untabled harmonics: 0 = Schroeder phases, n = hashed random phases (an ensemble's scattered upper partials; Schroeder phases on a steady upper spectrum buzz once per period) |
 | `spread` | 0…50 cents | 0 | ensemble: each partial is a Gaussian cluster of components (sd in cents, spacing ≥ 1 grid step, ≤ 25 components, power kept, fixed pseudo-random phases) on the loop grid. Replaces `unison` |
 | `vib_rate`, `vib_cents` | 0…12, 0…100 | 0, 0 | vibrato as phase modulation, rate snapped to the loop grid |
 | `scoop_cents`, `scoop_t` | ±200, 0.001…1 | 0, 0.03 | onset pitch scoop; gone by the loop start |
@@ -239,7 +240,7 @@ result is kept only if better.
 | Piano 293 | 0.74 | 0.84 | 0.85 (stiff-string alternative 0.84) |
 | Fingered Bass 240 | 0.956 | 0.985 | 0.985 |
 
-Round 6: Strings 0.815 (`side` rows, 512-number budget). Round 5: Strings 0.79 (per-harmonic `am` + `vib` tables). Round 4 under the A-weighted score with `d_onset`: kick 0.70 (from 0.41 with the drum noise layer), snare 0.68,
+Round 7: Strings without buzz (`phase_seed`; scorer flag `buzz`). Round 6: Strings 0.815 (`side` rows, 512-number budget). Round 5: Strings 0.79 (per-harmonic `am` + `vib` tables). Round 4 under the A-weighted score with `d_onset`: kick 0.70 (from 0.41 with the drum noise layer), snare 0.68,
 hat 0.65, Bass 0.89, Strings 0.67 (loop vibrato + AM), Piano 0.75 (stiff string + stretched loop).
 
 | Measured (pilot preparation) | Score |
