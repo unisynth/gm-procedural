@@ -86,6 +86,8 @@ structural (the string-attack hand-over), so `fit` never tunes it.
 | `inharm` | 0…0.02 | 0 | stiff-string B: `f_k = k·f0·√((1+Bk²)/(1+B))` |
 | `even_db` | −48…24 | 0 | even-harmonic gain (clarinet-like when negative) |
 | `unison`, `detune` | 1…8, 0…50 | 1, 0 | voices and the cents spread between them |
+| `vib_phase` | 0…1 cycles | 0 | vibrato phase at sample 0 (deviation ∝ cos(2π(vib_phase + rate·t))) |
+| `am_db`, `am_phase` | 0…12 dB, 0…1 | 0, 0 | amplitude modulation locked to the vibrato phasor (body-resonance wobble of a vibrato loop) |
 | `spread` | 0…50 cents | 0 | ensemble: each partial is a Gaussian cluster of components (sd in cents, spacing ≥ 1 grid step, ≤ 25 components, power kept, fixed pseudo-random phases) on the loop grid. Replaces `unison` |
 | `vib_rate`, `vib_cents` | 0…12, 0…100 | 0, 0 | vibrato as phase modulation, rate snapped to the loop grid |
 | `scoop_cents`, `scoop_t` | ±200, 0.001…1 | 0, 0.03 | onset pitch scoop; gone by the loop start |
@@ -155,11 +157,13 @@ Both waves are "played": the attack, then the loop repeated to 0.5 s.
 
 | Component | Measures |
 |---|---|
-| `d_spec` | mean dB difference of log-mel spectrograms (≥ 2 periods/512/2048-point, floor −80 dB, first 50 ms weighted double) |
-| `d_env` | mean dB difference of RMS envelopes (window ≥ 2 periods and ≥ 10 ms, every 2 ms) |
+| `d_spec` | mean dB difference of A-weighted log-mel spectrograms (≥ 2 periods/512/2048-point frames centred from t = 0, floored at peak − 50 dB, first 50 ms weighted double) |
+| `d_onset` | the same, over the frames in the first 50 ms only (attacks and clicks) |
+| `d_env` | mean dB difference of RMS envelopes (window ≥ 2 periods and ≥ 10 ms, every 2 ms) over the attack. Over the loop: 100 ms-smoothed envelopes plus the difference in wobble depth (fine-envelope sd) |
 | `d_loop` | mean dB difference of the loop's exact DFT bins (DC excluded) |
 
-`score = exp(−(d_spec/12 + d_env/6 + d_loop/12))`. Tiers: A ≥ 0.95, B ≥ 0.85, C below that. Flags: `silent`,
+`score = exp(−(d_spec/12 + d_onset/12 + d_env/6 + d_loop/12))`. A-weighting and the onset term came from listening:
+the kick's missing click had cost almost nothing. Tiers: A ≥ 0.95, B ≥ 0.85, C below that. Flags: `silent`,
 `clipped`, `nan`, `env_off` (10 ms span > 6 dB off where the original is above −40 dB), `pitch_off` (autocorrelation
 f0 > 5 cents off, pitched waves only) and `loop_click`.
 
@@ -175,12 +179,21 @@ vowels, Hammond footages, piano B, vibrato and scoop.
   - The harmonic table is the cluster energy within ±m/2 bins of `k·m`.
   - Wide clusters (median ≥ 4 peaks within 10 dB, sd ≥ 3 cents over harmonics 1–20) give `spread` = the median
     sd, with no phase table. Otherwise two strong peaks give `unison` 2 and `detune`.
+  - Loop vibrato (`loop_vibrato`): the pitch track of harmonic 1 over the tiled loop sets the periods per loop from
+    its mean. A sinusoid at whole cycles per loop gives `vib_rate`/`vib_cents`/`vib_phase`, and the loudness track
+    gives `am_db`/`am_phase`. With vibrato, neither `spread` nor `unison` is set.
+  - Inharmonic priors centre each loop cluster on the stretched partial (running B).
+  - Drums get a broadband `noise` layer like snares (bands below 2× the body removed, level from the energy share
+    above it).
   - Struck strings with an inharmonic prior, and plucked strings, get a stiff-string `attack` layer when the
     attack lasts at least 50 ms (`string_attack`).
     - Its table, `inharm` (B) and `pdecay` come from partial peaks in an early and a late zero-padded spectrum.
     - The sustain layer then waits (`dly` = loop start − 10 ms, `a` 10 ms), so stretched and grid partials never
       overlap.
-    - Piano also gets a hammer-noise layer.
+    - The string layer carries the attack alone (no half-level recalibration). The hammer-noise layer was dropped:
+      it added nothing measurable.
+  - `fit` keeps structural scalars fixed: `unison`, `dly`, `spread`, `vib_rate` on sustain layers, and the
+    envelope of a delayed layer.
   - Peak positions give `inharm` when the prior is inharmonic.
   - Phases of the first 32 harmonics are converted to the generator's convention.
   - `tail` −48 dB/oct.
@@ -208,7 +221,7 @@ if the budget needs room). Last, the fine envelope `env` (24 points, 0–400 ms)
 model RMS level around it, over 6 passes (room is taken from the harmonic table, then from the last `tf` rows). The
 result is kept only if better.
 
-| Pilot | first fit | + harmonic + `tf` | + `env`, `refine`, new models |
+| Pilot (old score) | first fit | + harmonic + `tf` | + `env`, `refine`, new models |
 |---|---|---|---|
 | kick 376 | 0.67 | 0.74 | 0.88 |
 | snare 161 | 0.45 | 0.70 | 0.76 |
@@ -216,6 +229,9 @@ result is kept only if better.
 | Strings 405 | 0.60 | 0.68 | 0.71 (`spread`) |
 | Piano 293 | 0.74 | 0.84 | 0.85 (stiff-string alternative 0.84) |
 | Fingered Bass 240 | 0.956 | 0.985 | 0.985 |
+
+Round 4 under the A-weighted score with `d_onset`: kick 0.70 (from 0.41 with the drum noise layer), snare 0.68,
+hat 0.65, Bass 0.89, Strings 0.67 (loop vibrato + AM), Piano 0.75 (stiff string + stretched loop).
 
 | Measured (pilot preparation) | Score |
 |---|---|

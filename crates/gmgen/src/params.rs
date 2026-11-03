@@ -30,6 +30,10 @@ impl Layer {
         }
     }
     /// Scalar by name (panics on a name not in the family: a code bug, not data).
+    /// Value of scalar `name`, or `None` when the family has no such scalar.
+    pub fn try_get(&self, name: &str) -> Option<f32> {
+        FAMILIES[self.family].scalars.iter().position(|s| s.name == name).map(|i| self.scalars[i])
+    }
     pub fn get(&self, name: &str) -> f32 {
         self.scalars[schema::scalar(&FAMILIES[self.family], name).unwrap_or_else(|| panic!("no scalar {name}"))]
     }

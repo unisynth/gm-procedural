@@ -83,7 +83,25 @@ Organ wave 151 scores 0.93.
   pattern (random component phases), a noise-like ceiling.
 - **`refine` (fit ↔ correct) barely helps.** The scalar fit can't leave the optimum the tables were fitted to.
 
+## Round 4: listening "376, 405, 293-alt end differ"
+
+These are the three the score had rated well, so the score was wrong. Measured with time slices of RMS, centroid,
+band shares and zero-crossing pitch:
+
+| wave | what differed | cause | fix |
+|---|---|---|---|
+| 376 kick | 0–5 ms centroid 2.1 kHz vs 0.3 kHz; band > 4 kHz 20–35 dB low through the decay | no click/texture layer, and the score was blind to it: the 50 Hz body set the floor, frame 0 started at sample 0 (Hann ≈ 0 over the click), and the click was averaged over 0.5 s | A-weighting, centred frames, `d_onset`; broadband noise layer for drums |
+| 405 strings | loudness sd 0.2 dB vs 1.22 | the loop is a 2.27 Hz vibrato (one cycle per loop, ±12 cents) with locked loudness wobble; analysis said "12-cent ensemble" and 97 periods instead of 98; the fit flattened any random shimmer | loop vibrato analysis + `vib_phase`, `am_db`/`am_phase`; loop `d_env` by smoothed shape + wobble depth |
+| 293-alt end | loop band > 4 kHz 6 dB low | the loop's partials are stretched too; the clusters at k·m lost them above h14 | clusters centred on the stretched partial; the string layer keeps its level |
+
+Scores on the new scale: kick 0.70, snare 0.68, hat 0.65, Bass 0.89, Strings 0.67, Piano 0.75 (stiff-string, now
+committed). Organ 1's analysis drops to 0.88: `d_onset` sees its key click (2–3 kHz, first 10 ms), which is real and
+not modelled.
+
 ## Open findings for the bulk fit
+
+- **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.
+- **Hat 83 is lowest (0.65).** `d_spec`/`d_onset` around 2.8.
 
 - **Unpitched sampled percussion** (snare, hat) stays near 0.45–0.6. Remaining error: the high band above about
   9 kHz (the analysis bands stop at 0.45·rate) and the temporal-spectral evolution, which a single envelope per

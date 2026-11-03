@@ -1,6 +1,7 @@
 //! `additive`: harmonic table (dB per harmonic) with tail slope, stiff-string inharmonicity, unison detune,
 //! per-partial extra decay, odd/even balance, onset brightness tilt, attack pitch scoop and vibrato (as phase
-//! modulation, so loops stay exactly periodic), and ensemble `spread`: each partial becomes a Gaussian cluster of
+//! modulation, so loops stay exactly periodic), amplitude modulation `am_db` locked to the vibrato phasor, and
+//! ensemble `spread`: each partial becomes a Gaussian cluster of
 //! components (sd `spread` cents, spacing ≥ one grid step, ≤ 25 components, power preserved, fixed pseudo-random
 //! phases) on the loop grid, so a chorus of players loops exactly. Amplitudes run at control rate (every `CR`
 //! samples, linear).
@@ -42,15 +43,25 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
     } else {
         Vec::new()
     };
-    let vib_n = if l.get("vib_cents") > 0.0 { ctx.grid(l.get("vib_rate")) } else { 0 };
+    let am_db = l.get("am_db");
+    let vib_n = if l.get("vib_cents") > 0.0 || am_db > 0.0 { ctx.grid(l.get("vib_rate")) } else { 0 };
     let vib_hz = ctx.hz(vib_n);
     let vib: Vec<f32> = if vib_n > 0 {
         let mut p = Phasor::new(vib_n, ctx.den);
-        (0..n).map(|_| sin_cycles(p.tick())).collect()
+        let ph = l.get("vib_phase");
+        (0..n).map(|_| sin_cycles(p.tick() + ph)).collect()
     } else {
         Vec::new()
     };
     let vib_dev = crate::math::exp2(l.get("vib_cents") / 1200.0) - 1.0;
+    // Amplitude modulation locked to the vibrato phasor (periodic on the loop like the vibrato).
+    let am: Vec<f32> = if am_db > 0.0 && vib_n > 0 {
+        let mut p = Phasor::new(vib_n, ctx.den);
+        let ph = l.get("am_phase");
+        (0..n).map(|_| db(am_db * crate::math::cos_cycles(p.tick() + ph))).collect()
+    } else {
+        Vec::new()
+    };
 
     let steps = n.div_ceil(CR) + 1;
     let env: Vec<f32> = (0..steps).map(|j| layer_env(l, ctx.t(j * CR))).collect();
@@ -147,6 +158,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
                     let (j, w) = (i / CR, (i % CR) as f32 / CR as f32);
                     amp[j] + (amp[j + 1] - amp[j]) * w
                 };
+                let a = if am.is_empty() { a } else { a * am[i] };
                 *o += wamp * a * sin_cycles(c);
             }
         }

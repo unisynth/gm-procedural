@@ -101,6 +101,12 @@ skip when `GM_DLS` is unset.
   `dly` envelope scalar, stiff-string attack analysis (`string_attack`), ensemble `spread` on `additive` with
   analysis detection. Tests: `env_gain_lands`, `spread_loops_exactly_and_widens_harmonics`. Pilot: kick 0.88,
   snare 0.76, hat 0.78, Strings 0.71, Piano 0.85, Bass 0.985.
+- [x] 6.2c Third feedback round ("376, 405, 293-alt end differ"):
+  - Score: A-weighting, centred frames, `d_onset`, loop-texture `d_env`; `scores.json` re-baselined.
+  - Analysis: drum broadband noise, loop vibrato + locked AM (`vib_phase`, `am_db`, `am_phase`), stretched loop
+    clusters, string layer kept at full level; structural scalars kept out of the fit.
+  - Pilot (new score): kick 0.70, snare 0.68, hat 0.65, Bass 0.89, Strings 0.67, Piano 0.75 (stiff-string, now
+    committed).
 - [ ] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
 

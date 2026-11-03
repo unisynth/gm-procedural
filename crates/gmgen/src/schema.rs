@@ -50,7 +50,7 @@ macro_rules! with_env {
     };
 }
 
-static ADDITIVE: [Scalar; 20] = with_env![
+static ADDITIVE: [Scalar; 23] = with_env![
         s("level_db", -80.0, 24.0, 0.0),
         s("cents", -1200.0, 1200.0, 0.0),
         s("tail", -48.0, 0.0, -96.0 / 8.0), // dB/octave beyond the table
@@ -62,7 +62,10 @@ static ADDITIVE: [Scalar; 20] = with_env![
         s("unison", 1.0, 8.0, 1.0),
         s("detune", 0.0, 50.0, 0.0), // cents spread of the unison voices (outermost pair)
         s("vib_rate", 0.0, 12.0, 0.0),
-        s("vib_cents", 0.0, 100.0, 0.0),
+        s("vib_cents", 0.0, 100.0, 0.0), // peak frequency deviation
+        s("vib_phase", 0.0, 1.0, 0.0),   // cycles at sample 0 (deviation ∝ cos(2π(vib_phase + rate·t)))
+        s("am_db", 0.0, 12.0, 0.0),      // amplitude modulation at the vibrato rate: gain db(am_db·cos(…))
+        s("am_phase", 0.0, 1.0, 0.0),    // its phase in cycles at sample 0
         s("scoop_cents", -200.0, 200.0, 0.0),
         s("scoop_t", 0.001, 1.0, 0.03),
         s("spread", 0.0, 50.0, 0.0), // ensemble: each partial a Gaussian cluster, sd in cents (replaces unison)

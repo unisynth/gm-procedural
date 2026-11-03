@@ -61,11 +61,17 @@ fn vars(p: &Params, only: Option<&[String]>) -> Vec<Var> {
     let keep = |name: String| only.is_none_or(|o| o.contains(&name));
     for (l, layer) in p.layers.iter().enumerate() {
         for (k, s) in FAMILIES[layer.family].scalars.iter().enumerate() {
-            if layer.explicit[k] && keep(format!("{l}.{}", s.name)) && !matches!(s.name, "unison" | "dly") {
+            if layer.explicit[k] && keep(format!("{l}.{}", s.name)) && !matches!(s.name, "unison" | "dly" | "spread")
+                // On a loop the vibrato rate snaps to whole cycles per loop: structural there.
+                && !(s.name == "vib_rate" && layer.region == Region::Sustain)
+                // A delayed layer (string hand-over) keeps its envelope: it must be at full level at the loop.
+                && !(matches!(s.name, "a" | "h" | "d" | "s") && layer.try_get("dly").unwrap_or(0.0) > 0.0)
+            {
                 let log = s.min > 0.0 && s.max / s.min >= 100.0;
                 // Narrow pitch-like ranges around the current value: the analysis is already close.
                 let (lo, hi) = match s.name {
                     "cents" => ((layer.scalars[k] - 50.0).max(s.min), (layer.scalars[k] + 50.0).min(s.max)),
+                    "inharm" if layer.scalars[k] > 0.0 => (layer.scalars[k] / 2.0, (layer.scalars[k] * 2.0).min(s.max)),
                     "freq" | "base" | "bp" | "hp" | "lp" => {
                         ((layer.scalars[k] / 2.0).max(s.min), (layer.scalars[k] * 2.0).min(s.max))
                     }

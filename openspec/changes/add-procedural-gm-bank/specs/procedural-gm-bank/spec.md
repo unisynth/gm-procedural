@@ -153,6 +153,14 @@ The fitting tool SHALL score a generated wave against the original wave of the s
 - **WHEN** a silent wave is scored against a non-silent original
 - **THEN** the score is below 0.1
 
+#### Scenario: Missing onset click is penalised
+- **WHEN** a decaying 55 Hz body is scored against the same body plus a 2 ms broadband click
+- **THEN** the onset distance `d_onset` (A-weighted spectrogram distance over the first 50 ms, frames centred from t = 0) is above 3 dB
+
+#### Scenario: Loop shimmer is compared by depth
+- **WHEN** two looped waves have the same loudness wobble depth but a different pattern
+- **THEN** their envelope distance over the loop is below 0.4 dB, and a flat loop against the wobbling one is at least twice that
+
 ### Requirement: Render and compare report
 `gmfit render <wave>` SHALL write the original and generated wave as WAV, a PNG contact sheet (waveforms, original vs generated spectrograms, difference), and a JSON report on stdout with wave index, instrument names using it, model layers, score, components and flags (`silent`, `clipped`, `nan`, `loop_click`, `pitch_off`, `env_off`).
 

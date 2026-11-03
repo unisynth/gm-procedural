@@ -183,6 +183,25 @@ These came from the round-2 listening feedback ("is there any way to improve?").
   - *Measured:* Strings 0.679 → 0.712, `d_loop` 0.14 → 0.05. The remaining error is the shimmer *pattern*, which,
     like noise, can't match sample for sample.
 
+### D4e. Round 4 analysis and model fixes
+- **Drum noise layer.** Kicks, like snares, get a broadband `noise` layer. Bands below 2× the body are removed,
+  and the level is set from the original's energy share above 2× the body. *Kick 376:* 0.41 → 0.70 (new score).
+- **Loop vibrato.** The pitch track of harmonic 1 over the tiled loop gives the mean pitch (the periods per loop;
+  autocorrelation said 97 where it is 98), and a sinusoid at whole cycles per loop gives `vib_rate`, `vib_cents`
+  and the new `vib_phase`. The loudness track at the same rate gives the new `am_db`/`am_phase`: amplitude
+  modulation locked to the vibrato phasor, periodic on the loop. With vibrato present, neither `spread` nor
+  `unison` is set (sidebands look like twin peaks and a cluster).
+  - *Strings 405:* what looked like a 12-cent ensemble was a 2.27 Hz (one cycle per loop) vibrato of about ±12
+    cents with ±1.5 dB loudness wobble. Score 0.58 → 0.67, and loudness sd 1.06 dB against the original's 1.22.
+- **Stretched loop.** For inharmonic priors, the loop clusters centre on √((1+Bk²)/(1+B))·k·m with a running B.
+  *Piano 293:* the loop now matches exactly (level, centroid, high band, the 334 Hz stretched pitch read). Score
+  0.68 → 0.75 with the stiff-string attack layer, which is now committed.
+- **The string layer carries the attack alone.** The generic "attack layer = half the onset level" recalibration
+  is skipped for it.
+- **Structural scalars stay out of CMA-ES:** `unison`, `dly`, `spread`, `vib_rate` on sustain layers, and the
+  envelope of a delayed layer. Each of them broke a hand-over or a grid lock when fitted.
+- The attack time comes from a 0.5 ms envelope.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators
@@ -200,7 +219,25 @@ sustain counts in proportion to how it is heard. Components:
   envelope. The smallest STFT is likewise ≥ 2 periods.
 - `d_loop`: log-magnitude difference of the loop's DFT (exact bins at multiples of rate/L; DC excluded).
 
-Combined score: `score = exp(-(d_spec/12 + d_env/6 + d_loop/12))`. It equals 1 for identical waves and falls toward 0
+**Round 4 (listening: "376, 405, 293-alt end differ"; the score had ranked them well).** Measured causes:
+- The kick lacked its 2 kHz click and a broadband texture 20–35 dB down. `d_spec` didn't see it, for three
+  reasons:
+  - The 50 Hz body set the peak, so the −50 dB floor hid the high band.
+  - The first STFT frame began at sample 0, so its Hann window was nearly 0 over the click.
+  - A 2 ms click was averaged over 0.5 s.
+- The strings' shimmer was punished for its pattern, so the fit flattened it.
+
+Changes:
+- **A-weighting** of every mel band and loop group before the floor.
+- **Frames centred from t = 0.**
+- **`d_onset`**: the A-weighted spectrogram distance over the frames in the first 50 ms only.
+- **`d_env` over the looped part** compares 100 ms-smoothed envelopes plus the difference of fine-envelope sd
+  (wobble depth). The attack stays exact.
+
+The scale dropped (pilot mean −0.1), and `scores.json` was re-baselined. Organ 1's analysis fell from 0.99 to 0.88
+on `d_onset`: its 2–3 kHz key click in the first 10 ms, which is real and not modelled yet.
+
+Combined score: `score = exp(-(d_spec/12 + d_onset/12 + d_env/6 + d_loop/12))`. It equals 1 for identical waves and falls toward 0
 for silence. The weights are recalibrated in the pilot (task group 5), and any change re-baselines `scores.json`.
 Flags:
 - `pitch_off`: the f0 estimate differs by more than 5 cents.
