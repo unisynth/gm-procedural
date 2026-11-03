@@ -54,6 +54,8 @@ pub struct Params {
     pub correction: Vec<f32>,
     /// Time × band correction (`tf`), rows of `tf::BANDS` dB gains (empty = none).
     pub tf: Vec<f32>,
+    /// Fine envelope correction (`env`): dB gains at the first `env.len()` of `schema::ENV_TIMES` (empty = none).
+    pub env: Vec<f32>,
 }
 
 impl Default for Params {
@@ -64,6 +66,7 @@ impl Default for Params {
             layers: Vec::new(),
             correction: Vec::new(),
             tf: Vec::new(),
+            env: Vec::new(),
         }
     }
 }
@@ -85,7 +88,7 @@ impl Params {
             .iter()
             .map(|l| l.explicit.iter().filter(|e| **e).count() + l.tables.iter().map(Vec::len).sum::<usize>())
             .sum();
-        w + l + self.correction.len() + self.tf.len()
+        w + l + self.correction.len() + self.tf.len() + self.env.len()
     }
 
     /// Budget, table shape and range checks. The message names the offending part; callers prefix the wave.
@@ -107,6 +110,12 @@ impl Params {
         }
         if !self.tf.len().is_multiple_of(crate::schema::TF_BANDS) || self.tf.len() / crate::schema::TF_BANDS > crate::schema::TF_TIMES.len() {
             return Err(format!("tf needs ≤ {} rows of {}", crate::schema::TF_TIMES.len(), crate::schema::TF_BANDS));
+        }
+        if self.env.len() > crate::schema::ENV_TIMES.len() {
+            return Err(format!("env needs ≤ {} points", crate::schema::ENV_TIMES.len()));
+        }
+        if let Some(c) = self.env.iter().find(|c| !(-48.0..=24.0).contains(*c)) {
+            return Err(format!("env {c} dB outside -48..24"));
         }
         if let Some(c) = self.tf.iter().find(|c| !(-24.0..=24.0).contains(*c)) {
             return Err(format!("tf {c} dB outside -24..24"));
@@ -161,6 +170,8 @@ impl Params {
         f32s(out, &self.correction);
         out.push((self.tf.len() / crate::schema::TF_BANDS) as u8);
         f32s(out, &self.tf);
+        out.push(self.env.len() as u8);
+        f32s(out, &self.env);
     }
 
     /// Reads one encoded parameter set from the front of `b`, returning it and the remaining bytes.
@@ -204,6 +215,8 @@ impl Params {
         let correction = r.f32s(n)?;
         let rows = r.u8()? as usize;
         let tf = r.f32s(rows * crate::schema::TF_BANDS)?;
-        Some((Params { wave, wave_explicit, layers, correction, tf }, r.0))
+        let n = r.u8()? as usize;
+        let env = r.f32s(n)?;
+        Some((Params { wave, wave_explicit, layers, correction, tf, env }, r.0))
     }
 }

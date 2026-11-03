@@ -43,14 +43,14 @@ pub const WAVE: &[Scalar] = &[
 ];
 
 /// Array of the shared envelope scalars (linear attack `a` s, hold `h` s, exponential decay `d` s toward sustain
-/// level `s` 0–1) followed by the given family scalars.
+/// level `s` 0–1, silent before delay `dly` s) followed by the given family scalars.
 macro_rules! with_env {
     ($($x:expr),* $(,)?) => {
-        [s("a", 0.0, 2.0, 0.002), s("h", 0.0, 2.0, 0.0), s("d", 0.001, 30.0, 1.0), s("s", 0.0, 1.0, 1.0), $($x),*]
+        [s("a", 0.0, 2.0, 0.002), s("h", 0.0, 2.0, 0.0), s("d", 0.001, 30.0, 1.0), s("s", 0.0, 1.0, 1.0), s("dly", 0.0, 2.0, 0.0), $($x),*]
     };
 }
 
-static ADDITIVE: [Scalar; 18] = with_env![
+static ADDITIVE: [Scalar; 20] = with_env![
         s("level_db", -80.0, 24.0, 0.0),
         s("cents", -1200.0, 1200.0, 0.0),
         s("tail", -48.0, 0.0, -96.0 / 8.0), // dB/octave beyond the table
@@ -65,9 +65,10 @@ static ADDITIVE: [Scalar; 18] = with_env![
         s("vib_cents", 0.0, 100.0, 0.0),
         s("scoop_cents", -200.0, 200.0, 0.0),
         s("scoop_t", 0.001, 1.0, 0.03),
+        s("spread", 0.0, 50.0, 0.0), // ensemble: each partial a Gaussian cluster, sd in cents (replaces unison)
 ];
 
-static NOISE: [Scalar; 11] = with_env![
+static NOISE: [Scalar; 12] = with_env![
         s("level_db", -80.0, 24.0, 0.0),
         s("hp", 10.0, 20000.0, 10.0),
         s("lp", 20.0, 20000.0, 20000.0),
@@ -161,3 +162,8 @@ pub const TF_BANDS: usize = 20;
 /// Ratio between neighbouring `tf` band centres (55 Hz · ratio^b, up to ~10 kHz).
 pub const TF_RATIO: f32 = 1.315;
 pub const TF_TIMES: [f32; 9] = [0.0, 0.005, 0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64];
+/// Fine envelope correction grid (`env`, design D4d): point times in seconds (≈ 1 ms apart at the onset).
+pub const ENV_TIMES: [f32; 24] = [
+    0.0, 0.0005, 0.001, 0.002, 0.003, 0.004, 0.006, 0.008, 0.010, 0.013, 0.016, 0.020, 0.025, 0.032, 0.040, 0.050,
+    0.064, 0.080, 0.100, 0.130, 0.170, 0.220, 0.300, 0.400,
+];

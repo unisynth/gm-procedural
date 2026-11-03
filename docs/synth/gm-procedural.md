@@ -60,13 +60,19 @@ number, with 0 dB beyond the table (fading over one harmonic).
 - On a looped wave the gains fade to 0 dB over the last 10 ms before the loop start, and the loop is untouched.
 - `tf::measure` gives band energies on the same grid, for the fit.
 
+**Fine envelope `env`** (`tf.rs`, design D4d): dB gains at 24 fixed times (0, 0.5, 1, 2, 3, 4, 6, 8, 10, 13, 16,
+20, 25, 32, 40, 50, 64, 80, 100, 130, 170, 220, 300 and 400 ms). Only the points the attack needs are stored. The
+gain is a per-sample linear dB interpolation on the attack; on a looped wave it fades to 0 dB over the last 10 ms
+before the loop start. It applies after `tf`, so it catches onset detail finer than the 23 ms STFT.
+
 **Determinism.** `math.rs` provides `sin_cycles`, `exp2`, `log2`, `db`, `sqrt`, `floor` and an xorshift RNG. It uses
 only basic IEEE operations. `clippy.toml` bans `f32` transcendental functions and `mul_add` in the crate.
 
 ## Families
 
 Envelope scalars shared by `additive` and `noise`: `a` (linear attack, s), `h` (hold, s), `d` (exponential decay
-time constant, s), `s` (sustain level 0–1). Defaults: 0.002, 0, 1, 1.
+time constant, s), `s` (sustain level 0–1), `dly` (silent before it, s). Defaults: 0.002, 0, 1, 1, 0. `dly` is
+structural (the string-attack hand-over), so `fit` never tunes it.
 
 ### `additive` (periodic)
 
@@ -79,7 +85,8 @@ time constant, s), `s` (sustain level 0–1). Defaults: 0.002, 0, 1, 1.
 | `pdecay` | 0…10 | 0 | extra decay rate per harmonic above 1 (1/s) |
 | `inharm` | 0…0.02 | 0 | stiff-string B: `f_k = k·f0·√((1+Bk²)/(1+B))` |
 | `even_db` | −48…24 | 0 | even-harmonic gain (clarinet-like when negative) |
-| `unison`, `detune` | 1…3, 0…50 | 1, 0 | voices and the cents spread between them |
+| `unison`, `detune` | 1…8, 0…50 | 1, 0 | voices and the cents spread between them |
+| `spread` | 0…50 cents | 0 | ensemble: each partial is a Gaussian cluster of components (sd in cents, spacing ≥ 1 grid step, ≤ 25 components, power kept, fixed pseudo-random phases) on the loop grid. Replaces `unison` |
 | `vib_rate`, `vib_cents` | 0…12, 0…100 | 0, 0 | vibrato as phase modulation, rate snapped to the loop grid |
 | `scoop_cents`, `scoop_t` | ±200, 0.001…1 | 0, 0.03 | onset pitch scoop; gone by the loop start |
 
@@ -166,7 +173,14 @@ vowels, Hammond footages, piano B, vibrato and scoop.
 - Pitch: `m = round(L·f0/rate)` periods per loop, so the wave pitch is exactly `m·rate/L`.
 - Sustain `additive`:
   - The harmonic table is the cluster energy within ±m/2 bins of `k·m`.
-  - Two strong peaks in a cluster give `unison` 2 and `detune`.
+  - Wide clusters (median ≥ 4 peaks within 10 dB, sd ≥ 3 cents over harmonics 1–20) give `spread` = the median
+    sd, with no phase table. Otherwise two strong peaks give `unison` 2 and `detune`.
+  - Struck strings with an inharmonic prior, and plucked strings, get a stiff-string `attack` layer when the
+    attack lasts at least 50 ms (`string_attack`).
+    - Its table, `inharm` (B) and `pdecay` come from partial peaks in an early and a late zero-padded spectrum.
+    - The sustain layer then waits (`dly` = loop start − 10 ms, `a` 10 ms), so stretched and grid partials never
+      overlap.
+    - Piano also gets a hammer-noise layer.
   - Peak positions give `inharm` when the prior is inharmonic.
   - Phases of the first 32 harmonics are converted to the generator's convention.
   - `tail` −48 dB/oct.
@@ -181,21 +195,27 @@ vowels, Hammond footages, piano B, vibrato and scoop.
 - Then 3 analytic passes over the sustain harmonic table.
 - The result is written only if it beats the committed score. `scores.json` is updated and `placeholder` cleared.
 
+**`gmfit refine <w> [--rounds 3] [--iters 80]`**: alternates `fit` (with the correction tables in place) and
+`correct`, stopping when a round gains less than 0.002. It is cheap, but it rarely gains: in the pilot only the hat
+moved, by +0.008.
+
 **`gmfit correct <w>`**: the analytic harmonic correction `20·log10(|orig_k| / |model_k|)` at loop bins `k·m`
 (2048-point spectrum for unlooped waves), clamped to ±24 dB. Entries under 0.5 dB, or 80 dB below the strongest
 harmonic, become 0. Harmonic levels are cluster energies (±m/2 bins around k·m), so inharmonic and detuned
 partials count. The table is limited by the remaining budget. `correct` then fits `tf`: each cell moves by
 original − model band energy over the attack, over 4 passes, keeping the best (the harmonic table's tail is trimmed
-if the budget needs room). The result is kept only if better.
+if the budget needs room). Last, the fine envelope `env` (24 points, 0–400 ms): each point moves by original −
+model RMS level around it, over 6 passes (room is taken from the harmonic table, then from the last `tf` rows). The
+result is kept only if better.
 
-| Pilot, harmonic + `tf` | before | after |
-|---|---|---|
-| snare 161 | 0.45 | 0.70 |
-| kick 376 | 0.67 | 0.74 |
-| hat 83 | 0.57 | 0.66 |
-| Strings 405 | 0.60 | 0.68 |
-| Piano 293 | 0.74 | 0.84 |
-| Fingered Bass 240 | 0.956 | 0.985 |
+| Pilot | first fit | + harmonic + `tf` | + `env`, `refine`, new models |
+|---|---|---|---|
+| kick 376 | 0.67 | 0.74 | 0.88 |
+| snare 161 | 0.45 | 0.70 | 0.76 |
+| hat 83 | 0.57 | 0.66 | 0.78 |
+| Strings 405 | 0.60 | 0.68 | 0.71 (`spread`) |
+| Piano 293 | 0.74 | 0.84 | 0.85 (stiff-string alternative 0.84) |
+| Fingered Bass 240 | 0.956 | 0.985 | 0.985 |
 
 | Measured (pilot preparation) | Score |
 |---|---|

@@ -77,6 +77,52 @@ fn every_wave_is_sane_and_loops_seamlessly() {
 }
 
 /// Spec "Structure diff is empty" (needs `GM_DLS`).
+/// Ensemble `spread`: the loop stays exactly periodic and harmonic 1's energy spreads over several grid bins.
+#[test]
+fn spread_loops_exactly_and_widens_harmonics() {
+    use crate::params::{Layer, Params};
+    use crate::schema::{family, Region};
+    let m = meta(405).unwrap(); // Strings: 9710-sample loop, ≈ 97 periods
+    let (s, l) = m.looped.map(|(a, b)| (a as usize, b as usize)).unwrap();
+    let mut p = Params::default();
+    let mut lay = Layer::new(family("additive").unwrap(), Region::Sustain);
+    lay.tables[0] = std::vec![0.0, -6.0, -12.0];
+    lay.set("a", 0.001);
+    lay.set("level_db", -12.0);
+    p.layers.push(lay);
+    let plain = render(&m, &p, 405);
+    p.layers[0].set("spread", 12.0);
+    let x = render(&m, &p, 405);
+    // Periodic: one loop length later the samples repeat.
+    let ext = {
+        let mut mm = m.clone();
+        mm.len += l;
+        render(&mm, &p, 405)
+    };
+    for i in s..s + l {
+        assert!((ext[i] - ext[i + l]).abs() < 1e-5, "not periodic at {i}");
+    }
+    // Width: count bins around harmonic 1 within 10 dB of its peak (DFT of the loop).
+    let bins = |y: &[f32]| {
+        let per = 97usize;
+        let mags: Vec<f32> = (per - 20..=per + 20)
+            .map(|k| {
+                let (mut re, mut im) = (0.0f32, 0.0f32);
+                for (n, v) in y[s..s + l].iter().enumerate() {
+                    let c = (k * n % l) as f32 / l as f32;
+                    re += v * crate::math::cos_cycles(c);
+                    im += v * crate::math::sin_cycles(c);
+                }
+                re * re + im * im
+            })
+            .collect();
+        let top = mags.iter().copied().fold(0.0, f32::max);
+        mags.iter().filter(|v| **v > top * 0.1).count()
+    };
+    assert_eq!(bins(&plain), 1);
+    assert!(bins(&x) >= 3, "spread cluster only {} bins", bins(&x));
+}
+
 #[test]
 fn structure_matches_windows_bank() {
     let Some(path) = std::env::var_os("GM_DLS").filter(|p| !p.is_empty()) else {

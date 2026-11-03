@@ -80,6 +80,17 @@ A wave MAY carry one time × band correction table `tf` of dB gains (±24 dB) on
 - **WHEN** `gmfit correct <wave>` runs
 - **THEN** after the harmonic table it sets each `tf` cell from the original − model band energy over the attack, over 4 passes, trims the harmonic table's tail if the budget needs room, and writes the result only if the score improves
 
+### Requirement: Optional fine envelope correction
+A wave MAY carry an `env` table of dB gains at fixed onset times (design D4d), applied per sample to the attack after the `tf` table. A loop SHALL stay untouched, with the gains fading to 0 dB before the loop start. Its entries count toward the 256-number budget.
+
+#### Scenario: Flat envelope gain lands
+- **WHEN** a looped wave gets an `env` table of -6 dB at every point after the first
+- **THEN** the RMS level around each point from 4 ms on drops by 6 ± 0.1 dB and the loop samples are unchanged
+
+#### Scenario: Ensemble spread loops exactly
+- **WHEN** a looped `additive` sustain layer has `spread` 12 cents
+- **THEN** the loop repeats within 1e-5 and harmonic 1 covers at least 3 loop-DFT bins within 10 dB of its peak
+
 ### Requirement: Every wave is generated
 Every one of the 495 waves SHALL have a committed parameter set. A wave without parameters, or whose output is non-finite, silent or clipped, SHALL fail the generator's test suite rather than ship as silence.
 

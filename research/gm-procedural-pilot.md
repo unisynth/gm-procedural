@@ -63,6 +63,26 @@ Organ wave 151 scores 0.93.
   (−24 dB everywhere).
 - **What still limits the drums:** `d_env` around 1.5, from envelope detail between the `tf` rows.
 
+## Round 3: fine envelope, refine, string and ensemble models
+
+| wave | round 2 | round 3 | what helped |
+|---|---|---|---|
+| 376 kick | 0.744 | 0.883 | `env` (fine onset envelope) |
+| 161 snare | 0.696 | 0.763 | `env` |
+| 83 hat | 0.660 | 0.780 | `env` + `refine` (+0.008) |
+| 240 Fingered Bass | 0.985 | 0.985 | – |
+| 405 Strings | 0.679 | 0.712 | `spread` (ensemble) + `refine` |
+| 293 Piano | 0.839 | 0.849 | stiff-string model 0.840: not committed, A/B alternative |
+
+- **Piano 293, measured.** B = 3.3·10⁻⁴ (h10 +27 cents, h14 +55 cents). Over 0.3 s, h1 drops 4 dB, h3 12 dB and
+  h5 20 dB. The stiff-string layer models this (plain 0.76 against 0.74) but loses 0.009 after the corrections,
+  partly to budget: 3 layers use 104 numbers, so the tables get fewer rows. The hammer-noise layer added nothing
+  (0.7601 against 0.7602).
+- **Strings 405, measured.** Every harmonic is a cluster of about 10 peaks within 10 dB, sd ≈ 12 cents, about
+  constant in cents. With `spread`, `d_loop` goes 0.14 → 0.05. The remaining `d_spec`/`d_env` is the shimmer
+  pattern (random component phases), a noise-like ceiling.
+- **`refine` (fit ↔ correct) barely helps.** The scalar fit can't leave the optimum the tables were fitted to.
+
 ## Open findings for the bulk fit
 
 - **Unpitched sampled percussion** (snare, hat) stays near 0.45–0.6. Remaining error: the high band above about

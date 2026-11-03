@@ -118,7 +118,7 @@ fn zero_cross_track(x: &[f32], rate: f32, lp: f32) -> Vec<(f32, f32)> {
 /// Fit-relevant scalars made explicit (so `fit` tunes them) with their current values.
 fn open_for_fit(l: &mut Layer) {
     let names: &[&str] = match gmgen::schema::FAMILIES[l.family].name {
-        "additive" => &["level_db", "a", "h", "d", "s", "tilt", "tilt_t"],
+        "additive" => &["level_db", "a", "h", "d", "s", "tilt", "tilt_t", "pdecay", "inharm"],
         "noise" => &["level_db", "a", "h", "d", "s", "hp", "lp"],
         "drum" => &["level_db", "freq", "ratio", "sweep_t", "decay", "a", "shape", "drive", "click_db", "click_decay"],
         "metal" => &["level_db", "base", "bp", "q", "hp", "a", "d", "d2", "split", "noise"],
@@ -239,7 +239,31 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
                     }
                 }
             }
-            if det.len() >= 2 {
+            // Ensemble: wide clusters (median ≥ 4 peaks within 10 dB, sd ≥ 3 cents over harmonics 1–20) → `spread`
+            // = median sd in cents; otherwise two strong peaks → unison 2.
+            let mut sds = Vec::new();
+            let mut counts = Vec::new();
+            let peak_mag = mag.iter().skip(1).copied().fold(0.0f32, f32::max);
+            for k in 1..=kmax.min(20) {
+                let c = k * per;
+                let (lo, hi) = (c.saturating_sub(w).max(1), (c + w).min(l / 2));
+                let p: Vec<(f32, f32)> = (lo..=hi).map(|b| (b as f32, mag[b] * mag[b])).collect();
+                let tot: f32 = p.iter().map(|x| x.1).sum();
+                if per < 8 || tot.sqrt() < peak_mag * 1e-2 {
+                    continue;
+                }
+                let mu = p.iter().map(|x| x.0 * x.1).sum::<f32>() / tot;
+                let sd = (p.iter().map(|x| (x.0 - mu).powi(2) * x.1).sum::<f32>() / tot).sqrt();
+                sds.push(1200.0 * ((mu + sd) / mu).log2());
+                let top = p.iter().map(|x| x.1).fold(0.0f32, f32::max);
+                counts.push(p.iter().filter(|x| x.1 > top * 0.1).count());
+            }
+            sds.sort_by(f32::total_cmp);
+            counts.sort();
+            let spread = (counts.len() >= 3 && counts[counts.len() / 2] >= 4 && sds[sds.len() / 2] >= 3.0).then(|| sds[sds.len() / 2]);
+            if let Some(sp) = spread {
+                sus.set("spread", sp.clamp(0.0, 50.0));
+            } else if det.len() >= 2 {
                 det.sort_by(f32::total_cmp);
                 sus.set("unison", 2.0);
                 sus.set("detune", det[det.len() / 2].clamp(0.0, 50.0));
@@ -258,7 +282,7 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
             // Phases of the first 32 harmonics, in the generator's convention: partial k is
             // sin(2π(n_k·t/L + ph)), and the loop DFT phase φ refers to cos at t = s, so
             // ph = (φ + π/2)/2π − n_k·s/L (mod 1), with n_k = k·per.
-            if prior.inharm == 0.0 && harm.len() + 32 <= budget {
+            if prior.inharm == 0.0 && spread.is_none() && harm.len() + 32 <= budget {
                 sus.tables[1] = (1..=harm.len().min(32))
                     .map(|k| {
                         let ph = (phs[(k * per).min(l / 2)] + std::f32::consts::FRAC_PI_2) / std::f32::consts::TAU
@@ -296,6 +320,43 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
                 p.layers.push(nz);
                 let k = p.layers.len() - 1;
                 calibrate(i, &mut p, k, (resid / 2.0).sqrt(), s..s + l);
+            }
+            // Struck / plucked strings: a free-running stiff-string attack layer (stretched partials, faster decay
+            // of the upper ones) hands over to the exactly periodic sustain layer at the loop.
+            let stringy = matches!(prior.kind, Kind::Plucked) || (matches!(prior.kind, Kind::Struck(_)) && prior.inharm > 0.0);
+            if stringy && s > (0.05 * rate) as usize && p.layers.iter().all(|x| x.region != Region::Attack) {
+                if let Some(mut a) = string_attack(orig, rate, s, f0) {
+                    let k = p.layers.iter().position(|x| x.region == Region::Sustain && gmgen::schema::FAMILIES[x.family].name == "additive").unwrap();
+                    // Hand-over at the loop: the sustain layer fades in over the same last 10 ms in which the string
+                    // layer fades out (render.rs), so stretched and grid partials never overlap.
+                    let st = s as f32 / rate;
+                    p.layers[k].set("dly", (st - 0.01).max(0.0));
+                    p.layers[k].set("a", 0.01f32.min(st));
+                    p.layers[k].set("h", 0.0);
+                    p.layers[k].set("s", 1.0);
+                    a.set("level_db", -12.0);
+                    p.layers.insert(0, a);
+                    let k = p.layers.iter().position(|x| x.region == Region::Sustain && gmgen::schema::FAMILIES[x.family].name == "additive").unwrap();
+                    calibrate(i, &mut p, k, harm_rms, s..s + l);
+                    let head = (0.003 * rate) as usize..(s / 3).max((0.003 * rate) as usize + 1);
+                    calibrate(i, &mut p, 0, rms(&orig[head.clone()]), head);
+                    if prior.inharm > 0.0 {
+                        // Hammer: short broadband thump.
+                        let mut nz = attack_layer("noise", &prior, &orig[..(0.03 * rate) as usize], rate, Region::Attack, (0.03 * rate) as usize);
+                        nz.set("d", 0.008);
+                        nz.set("s", 0.0);
+                        nz.set("a", 0.0005);
+                        nz.set("level_db", -30.0);
+                        p.layers.insert(1, nz);
+                    }
+                    // Budget: shrink the sustain table first, keeping room for the correction tables.
+                    let k = p.layers.iter().position(|x| x.region == Region::Sustain && gmgen::schema::FAMILIES[x.family].name == "additive").unwrap();
+                    while p.numbers() > MAX_NUMBERS - 24 && p.layers[k].tables[0].len() > 8 {
+                        p.layers[k].tables[0].pop();
+                        let n = p.layers[k].tables[0].len();
+                        p.layers[k].tables[1].truncate(n);
+                    }
+                }
             }
             if let Some(k) = p.layers.iter().position(|x| x.region == Region::Attack) {
                 // Attack layer covers what the sustain layer misses in the first part.
@@ -341,6 +402,77 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
     }
     let _ = p.validate();
     WaveFile { wave: i as u32, params: p, placeholder: false, note: format!("analyze: prior {:?}", prior.kind).chars().take(80).collect() }
+}
+
+/// Stiff-string attack layer (`additive`, attack region) from the wave's first `s` samples at fundamental `f0`:
+/// partial peaks of two zero-padded Hann spectra (early and late) give the amplitude table, the inharmonicity B
+/// (median over partials ≥ 4 of `(r² − 1)/(k² − r²)`, r = peak / k·f0), the fundamental's decay and the extra
+/// decay per partial index (`pdecay`, median of `(r_k − r_1)/(k − 1)`). `None` when the attack is too short.
+fn string_attack(x: &[f32], rate: f32, s: usize, f0: f32) -> Option<Layer> {
+    let n = [4096usize, 2048, 1024].into_iter().find(|n| 2 * n <= s)?;
+    let zp = 8 * n;
+    let fft = FftPlanner::<f32>::new().plan_fft_forward(zp);
+    let spec = |at: usize| -> Vec<f32> {
+        let mut b: Vec<Complex32> = (0..zp)
+            .map(|k| {
+                let v = if k < n { x[at + k] * (0.5 - 0.5 * (std::f32::consts::TAU * k as f32 / n as f32).cos()) } else { 0.0 };
+                Complex32::new(v, 0.0)
+            })
+            .collect();
+        fft.process(&mut b);
+        b[..zp / 2].iter().map(|c| c.norm() * 4.0 / n as f32).collect()
+    };
+    let (t1, t2) = (0usize, s - n);
+    let (e, l8) = (spec(t1), spec(t2));
+    let hz = |bin: usize| bin as f32 * rate / zp as f32;
+    let bin = |f: f32| ((f * zp as f32 / rate).round() as usize).min(zp / 2 - 1);
+    let mut bs: Vec<f32> = Vec::new();
+    let mut harm = Vec::new();
+    let mut rates = Vec::new();
+    let mut b_est = 0.0f32;
+    let top = e.iter().copied().fold(0.0f32, f32::max).max(1e-9);
+    for k in 1..=40usize {
+        let kf = k as f32;
+        let pred = kf * f0 * (1.0 + b_est * kf * kf).sqrt();
+        if pred + 0.4 * f0 > 0.45 * rate {
+            break;
+        }
+        let (lo, hi) = (bin(pred - 0.4 * f0), bin(pred + 0.4 * f0));
+        let pk = (lo..=hi).max_by(|a, b| e[*a].total_cmp(&e[*b]))?;
+        let (a1, a2) = (e[pk], l8[(lo..=hi).max_by(|a, b| l8[*a].total_cmp(&l8[*b]))?]);
+        let r = hz(pk) / (kf * f0);
+        if k >= 4 && a1 > top * 1e-3 {
+            let b = (r * r - 1.0) / (kf * kf - r * r);
+            if b > 0.0 && b < 0.02 {
+                bs.push(b);
+                let mut v = bs.clone();
+                v.sort_by(f32::total_cmp);
+                b_est = v[v.len() / 2];
+            }
+        }
+        let rate_k = (20.0 * (a1.max(1e-9) / a2.max(1e-9)).log10()) / (8.686 * (t2 - t1) as f32 / rate);
+        rates.push((k, rate_k, a1 > top * 1e-3));
+        harm.push(20.0 * a1.max(1e-7).log10());
+    }
+    if harm.len() < 2 {
+        return None;
+    }
+    let r1 = rates[0].1.max(0.05);
+    let mut pd: Vec<f32> = rates.iter().skip(1).filter(|r| r.2).map(|r| (r.1 - r1) / (r.0 - 1) as f32).collect();
+    pd.sort_by(f32::total_cmp);
+    let mut l = Layer::new(family("additive").unwrap(), Region::Attack);
+    while harm.len() > 1 && *harm.last().unwrap() < 20.0 * (top * 1e-4).log10() {
+        harm.pop();
+    }
+    l.tables[0] = harm;
+    l.set("inharm", b_est.clamp(0.0, 0.02));
+    l.set("pdecay", pd.get(pd.len() / 2).copied().unwrap_or(0.0).clamp(0.0, 10.0));
+    l.set("a", 0.001);
+    l.set("h", 0.0);
+    l.set("d", (1.0 / r1).clamp(0.01, 30.0));
+    l.set("s", 0.0);
+    l.set("tail", -48.0);
+    Some(l)
 }
 
 /// A transient layer of family `f` from the wave's onset (`until` = end of the analysed part).

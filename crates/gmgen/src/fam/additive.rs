@@ -1,6 +1,9 @@
 //! `additive`: harmonic table (dB per harmonic) with tail slope, stiff-string inharmonicity, unison detune,
 //! per-partial extra decay, odd/even balance, onset brightness tilt, attack pitch scoop and vibrato (as phase
-//! modulation, so loops stay exactly periodic). Amplitudes run at control rate (every `CR` samples, linear).
+//! modulation, so loops stay exactly periodic), and ensemble `spread`: each partial becomes a Gaussian cluster of
+//! components (sd `spread` cents, spacing ≥ one grid step, ≤ 25 components, power preserved, fixed pseudo-random
+//! phases) on the loop grid, so a chorus of players loops exactly. Amplitudes run at control rate (every `CR`
+//! samples, linear).
 use crate::math::{db, exp, log2, sin_cycles, sqrt};
 use crate::params::Layer;
 use crate::render::{layer_env, Ctx, Phasor};
@@ -20,6 +23,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
     let unison = (l.get("unison") + 0.5) as usize;
     let (detune, pdecay) = (l.get("detune"), l.get("pdecay"));
     let (tilt, tilt_t) = (l.get("tilt"), l.get("tilt_t"));
+    let spread = l.get("spread");
     let nyq = ctx.rate * 0.45;
     let k_table = harm.len().max(1);
 
@@ -71,7 +75,8 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         if fk > nyq {
             break;
         }
-        let a = db(a_db) * level * if k % 2 == 0 { even } else { 1.0 } / sqrt(unison as f32);
+        let voices = if spread > 0.0 { 1 } else { unison };
+        let a = db(a_db) * level * if k % 2 == 0 { even } else { 1.0 } / sqrt(voices as f32);
         for (j, v) in amp.iter_mut().enumerate() {
             let t = ctx.t(j * CR);
             let mut x = env[j] * a;
@@ -84,25 +89,52 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
             *v = x;
         }
         let ph0 = phase.get(k - 1).copied().unwrap_or(-(kf * (kf - 1.0)) / (2.0 * k_table.max(8) as f32));
-        for u in 0..unison {
-            // Voices spread over ±detune/2; with more than 3 voices the inner ones get a fixed pseudo-random jitter
-            // so an ensemble does not beat in a regular pattern.
-            let mut off = if unison == 1 { 0.0 } else { u as f32 / (unison - 1) as f32 - 0.5 };
-            if unison > 3 && u > 0 && u + 1 < unison {
-                off += (crate::math::fract(u as f32 * 0.618_034 + 0.3) - 0.5) * 0.6 / (unison - 1) as f32;
+        // Components: (grid frequency, amplitude factor, phase offset in cycles).
+        let mut comps: Vec<(u32, f32, f32)> = Vec::new();
+        if spread > 0.0 {
+            let c = ctx.grid(fk);
+            let sd = fk * (crate::math::exp2(spread / 1200.0) - 1.0);
+            let step = ctx.hz(1).max(1e-6);
+            let dn = ((sd / 2.0 / step + 0.5) as u32).max(1);
+            let jmax = ((2.5 * sd / (dn as f32 * step)) as i32 + 1).min(12);
+            let mut sum = 0.0;
+            for j in -jmax..=jmax {
+                let n = c as i64 + j as i64 * dn as i64;
+                if n <= 0 {
+                    continue;
+                }
+                let x = j as f32 * dn as f32 * step / sd.max(1e-6);
+                let w = exp(-0.5 * x * x);
+                let h = (k as u32).wrapping_mul(2_654_435_761) ^ ((j + 64) as u32).wrapping_mul(40_503) ^ ctx.seed;
+                let ph = (h.wrapping_mul(2_246_822_519) >> 8) as f32 / (1u32 << 24) as f32;
+                comps.push((n as u32, w, ph));
+                sum += w * w;
             }
-            let fu = fk * crate::math::exp2(off * detune / 1200.0);
-            let nk = ctx.grid(fu);
+            let g = 1.0 / sqrt(sum.max(1e-12));
+            comps.iter_mut().for_each(|c| c.1 *= g);
+        } else {
+            for u in 0..unison {
+                // Voices spread over ±detune/2; with more than 3 voices the inner ones get a fixed pseudo-random
+                // jitter so an ensemble does not beat in a regular pattern.
+                let mut off = if unison == 1 { 0.0 } else { u as f32 / (unison - 1) as f32 - 0.5 };
+                if unison > 3 && u > 0 && u + 1 < unison {
+                    off += (crate::math::fract(u as f32 * 0.618_034 + 0.3) - 0.5) * 0.6 / (unison - 1) as f32;
+                }
+                let fu = fk * crate::math::exp2(off * detune / 1200.0);
+                // Unison voices start at spread phases so they do not add up coherently at onset.
+                let ph = (((u as u64 * 2_654_435_761u64) >> 8) & 0xff_ffff) as f32 / (1u32 << 24) as f32;
+                comps.push((ctx.grid(fu), 1.0, if u == 0 { 0.0 } else { ph }));
+            }
+        }
+        for &(nk, wamp, wph) in &comps {
             if nk == 0 || ctx.hz(nk) > nyq {
                 continue;
             }
             let fr = ctx.hz(nk);
             let beta = if vib_n > 0 { fr * vib_dev / (core::f32::consts::TAU * vib_hz) } else { 0.0 };
             let mut ph = Phasor::new(nk, ctx.den);
-            // Unison voices start at spread phases so they do not add up coherently at onset.
-            ph.acc = (((u as u64 * ctx.den as u64 * 2_654_435_761u64) >> 32) % ctx.den as u64) as u32;
             for (i, o) in out.iter_mut().enumerate() {
-                let mut c = ph.tick() + ph0;
+                let mut c = ph.tick() + ph0 + wph;
                 if !scoop.is_empty() {
                     c += fr * scoop[i];
                 }
@@ -115,7 +147,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
                     let (j, w) = (i / CR, (i % CR) as f32 / CR as f32);
                     amp[j] + (amp[j + 1] - amp[j]) * w
                 };
-                *o += a * sin_cycles(c);
+                *o += wamp * a * sin_cycles(c);
             }
         }
     }

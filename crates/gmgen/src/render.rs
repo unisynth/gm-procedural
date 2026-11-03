@@ -61,8 +61,12 @@ impl Ctx {
     }
 }
 
-/// Linear attack `a`, hold `h`, exponential decay with time constant `d` toward sustain `s`.
-pub fn env(t: f32, a: f32, h: f32, d: f32, s: f32) -> f32 {
+/// Silent before `dly`, then linear attack `a`, hold `h`, exponential decay with time constant `d` toward sustain `s`.
+pub fn env(t: f32, a: f32, h: f32, d: f32, s: f32, dly: f32) -> f32 {
+    let t = t - dly;
+    if t < 0.0 {
+        return 0.0;
+    }
     if t < a {
         return t / a;
     }
@@ -75,7 +79,7 @@ pub fn env(t: f32, a: f32, h: f32, d: f32, s: f32) -> f32 {
 
 /// Envelope of a layer with the shared `a h d s` scalars.
 pub fn layer_env(l: &Layer, t: f32) -> f32 {
-    env(t, l.get("a"), l.get("h"), l.get("d"), l.get("s"))
+    env(t, l.get("a"), l.get("h"), l.get("d"), l.get("s"), l.get("dly"))
 }
 
 /// Integer phase accumulator: `cycles = acc / den`, exact and periodic.
@@ -217,6 +221,9 @@ pub fn render(meta: &WaveMeta, p: &Params, seed: u32) -> Vec<f32> {
     }
     if !p.tf.is_empty() {
         crate::tf::apply(&mut out, lp, rate, &p.tf);
+    }
+    if !p.env.is_empty() {
+        crate::tf::apply_env(&mut out, lp, rate, &p.env);
     }
     out.iter_mut().for_each(|x| *x = soft_knee(*x));
     out

@@ -61,7 +61,7 @@ fn vars(p: &Params, only: Option<&[String]>) -> Vec<Var> {
     let keep = |name: String| only.is_none_or(|o| o.contains(&name));
     for (l, layer) in p.layers.iter().enumerate() {
         for (k, s) in FAMILIES[layer.family].scalars.iter().enumerate() {
-            if layer.explicit[k] && keep(format!("{l}.{}", s.name)) && s.name != "unison" {
+            if layer.explicit[k] && keep(format!("{l}.{}", s.name)) && !matches!(s.name, "unison" | "dly") {
                 let log = s.min > 0.0 && s.max / s.min >= 100.0;
                 // Narrow pitch-like ranges around the current value: the analysis is already close.
                 let (lo, hi) = match s.name {
@@ -323,6 +323,81 @@ pub fn correct_tf(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
         }
         if sc > best.1 {
             best = (p.clone(), sc);
+        }
+    }
+    best
+}
+
+/// Analytic fine-envelope correction (D4d) on top of `start` (its own `env` replaced): each point moves by the
+/// original − model RMS level around it over the attack, 6 passes, best pass kept; points more than 60 dB below
+/// the original's loudest in both stay 0. Room comes from the harmonic table's tail, then the last `tf` rows.
+/// Kept only if better than `start`.
+pub fn correct_env(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
+    use gmgen::tf::{measure_env, ENV_TIMES, BANDS};
+    let m = gmgen::bank::meta(i).unwrap();
+    let rate = m.rate as f32;
+    let start_score = score_of(orig, i, start);
+    let mut base = start.clone();
+    base.env.clear();
+    let attack = loop_of(&m).map_or(orig.len(), |(s, _)| s);
+    let n = (ENV_TIMES.iter().filter(|t| **t * rate < attack as f32).count() + 1).min(ENV_TIMES.len());
+    while base.numbers() + n > MAX_NUMBERS && !base.correction.is_empty() {
+        base.correction.pop();
+    }
+    while base.numbers() + n > MAX_NUMBERS && base.tf.len() > BANDS {
+        base.tf.truncate(base.tf.len() - BANDS);
+    }
+    let n = n.min(MAX_NUMBERS - base.numbers());
+    if n < 2 || attack == 0 {
+        return (start.clone(), start_score);
+    }
+    let mo = measure_env(&orig[..attack], rate, n);
+    let top = mo.iter().copied().fold(f32::MIN, f32::max);
+    let mut p = base;
+    p.env = vec![0.0; n];
+    let mut best = (start.clone(), start_score);
+    for _ in 0..6 {
+        let mg = measure_env(&gmgen::render_wave(i, &p)[..attack], rate, n);
+        for (k, e) in p.env.iter_mut().enumerate() {
+            if mo[k] < top - 60.0 && mg[k] < top - 60.0 {
+                continue;
+            }
+            *e = ((*e + (mo[k] - mg[k])).clamp(-48.0, 24.0) * 10.0).round() / 10.0;
+        }
+        let sc = score_of(orig, i, &p);
+        if std::env::var_os("GMFIT_TRACE").is_some() {
+            eprintln!("correct_env: {n} points → {sc}");
+        }
+        if sc > best.1 {
+            best = (p.clone(), sc);
+        }
+    }
+    best
+}
+
+/// All analytic corrections in order: harmonic table, `tf`, `env` (each kept only if it improves).
+pub fn correct_all(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
+    let (p, _) = correct(orig, i, start);
+    let (p, _) = correct_tf(orig, i, &p);
+    correct_env(orig, i, &p)
+}
+
+/// Alternates `fit` (scalars, with the correction tables in place) and `correct_all` for `rounds` rounds, so model
+/// and tables adapt to each other; stops early when a round gains < 0.002. Returns the best seen.
+pub fn refine(orig: &[f32], i: usize, start: &Params, rounds: usize, iters: usize, seed: u64) -> (Params, f32) {
+    let mut best = (start.clone(), score_of(orig, i, start));
+    for r in 0..rounds {
+        let (p, _) = fit(orig, i, &best.0, iters, seed + r as u64, None);
+        let (p, s) = correct_all(orig, i, &p);
+        if std::env::var_os("GMFIT_TRACE").is_some() {
+            eprintln!("refine round {r}: {s}");
+        }
+        let gain = s - best.1;
+        if s > best.1 {
+            best = (p, s);
+        }
+        if gain < 0.002 {
+            break;
         }
     }
     best

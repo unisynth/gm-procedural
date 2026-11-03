@@ -7,7 +7,8 @@
 //! gmfit analyze <wave> [--force] [-o f]         initial parameters from the original + priors (placeholders only,
 //!                                               unless --force; -o writes elsewhere)
 //! gmfit fit <wave> [--iters N] [--seed S] [--vars 0.d,gain_db]   CMA-ES + harmonic refinement, kept if better
-//! gmfit correct <wave>                          analytic harmonic + time × band (tf) correction, kept if better
+//! gmfit correct <wave>                          analytic harmonic + time × band (tf) + fine envelope (env) correction, kept if better
+//! gmfit refine <wave> [--rounds 3] [--iters 80] [--seed 1]   alternate fit ↔ correct, kept if better
 //! gmfit report [--check] [--baseline]           score every wave → build/gm/report.md; --check vs scores.json
 //!
 //! Exit: 0 ok, 2 flags raised (render) / regression (report --check), 1 error.
@@ -164,14 +165,26 @@ fn main() {
             let wf = gmfit::load_wave(i).unwrap_or_else(|e| die(e));
             let o = orig.wave(i);
             let before = gmfit::fit::score_of(&o, i, &wf.params);
-            let (p, _) = gmfit::fit::correct(&o, i, &wf.params);
-            let (p, after) = gmfit::fit::correct_tf(&o, i, &p);
-            let (n, rows) = (p.correction.len(), p.tf.len() / gmgen::tf::BANDS);
+            let (p, after) = gmfit::fit::correct_all(&o, i, &wf.params);
+            let (n, rows, env) = (p.correction.len(), p.tf.len() / gmgen::tf::BANDS, p.env.len());
             let kept = gmfit::keep_if_better(&orig, i, gmgen::params_json::WaveFile { params: p, ..wf }, after).unwrap_or_else(|e| die(e));
-            println!("{}", json!({"wave": i, "before": score::r4(before), "after": score::r4(after), "entries": n, "tf_rows": rows, "written": kept}));
+            println!("{}", json!({"wave": i, "before": score::r4(before), "after": score::r4(after), "entries": n, "tf_rows": rows, "env_points": env, "written": kept}));
+        }
+        Some("refine") => {
+            let i = wave_arg(&args);
+            let rounds = opt("--rounds").map_or(3, |v| v.parse().unwrap_or_else(|_| die("--rounds: number")));
+            let iters = opt("--iters").map_or(80, |v| v.parse().unwrap_or_else(|_| die("--iters: number")));
+            let seed = opt("--seed").map_or(1, |v| v.parse().unwrap_or_else(|_| die("--seed: number")));
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let wf = gmfit::load_wave(i).unwrap_or_else(|e| die(e));
+            let o = orig.wave(i);
+            let before = gmfit::fit::score_of(&o, i, &wf.params);
+            let (p, after) = gmfit::fit::refine(&o, i, &wf.params, rounds, iters, seed);
+            let kept = gmfit::keep_if_better(&orig, i, gmgen::params_json::WaveFile { params: p, ..wf }, after).unwrap_or_else(|e| die(e));
+            println!("{}", json!({"wave": i, "before": score::r4(before), "after": score::r4(after), "written": kept}));
         }
         Some("report") => report(flag("--check"), flag("--baseline")),
-        _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | render <w> [-p f] | sweep <w> <param> <values> | report [--check] [--baseline]"),
+        _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | refine <w> | render <w> [-p f] | sweep <w> <param> <values> | report [--check] [--baseline]"),
     }
 }
 

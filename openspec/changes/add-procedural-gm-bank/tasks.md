@@ -97,6 +97,10 @@ skip when `GM_DLS` is unset.
 - [x] 6.2a Pilot listening feedback ("not good"): add the time × band correction `tf` (D4c) in `gmgen/src/tf.rs`
   (schema grid, params budget/validate/binary/JSON, render after the harmonic correction). `gmfit correct` now fits
   harmonic (cluster energy) + `tf`. Tests: FFT round trip; flat table = identity; band gain lands; loop untouched.
+- [x] 6.2b Second feedback round: fine envelope table `env` (D4d, `tf.rs`), `gmfit refine` (fit ↔ correct),
+  `dly` envelope scalar, stiff-string attack analysis (`string_attack`), ensemble `spread` on `additive` with
+  analysis detection. Tests: `env_gain_lands`, `spread_loops_exactly_and_widens_harmonics`. Pilot: kick 0.88,
+  snare 0.76, hat 0.78, Strings 0.71, Piano 0.85, Bass 0.985.
 - [ ] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
 

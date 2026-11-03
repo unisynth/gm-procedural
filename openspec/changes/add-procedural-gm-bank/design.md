@@ -161,6 +161,28 @@ stay 0. If the budget is short, the harmonic table's tail is trimmed first.
 A 12-band grid scored up to 0.02 lower than 20 bands. The harmonic table now compares *cluster* energy (±m/2 bins
 around k·m). Single bins called inharmonic piano partials "missing" and set −24 dB.
 
+### D4d. Fine envelope `env`, string attack, ensemble spread
+These came from the round-2 listening feedback ("is there any way to improve?").
+- **`env`.** dB gains at 24 fixed times (0–400 ms, about 1 ms apart at the onset), applied per sample to the
+  attack after `tf`. On a looped wave it fades to 0 dB before the loop start, and the loop is untouched. The drums'
+  error was mostly envelope detail finer than the 23 ms `tf` STFT. It is fitted analytically (RMS around each
+  point, 6 passes).
+  - *Measured:* kick 0.74 → 0.88, hat 0.66 → 0.77, snare 0.70 → 0.76.
+- **`refine`.** Alternates `fit` with the tables in place and `correct`.
+  - *Measured:* +0.008 on the hat, 0 elsewhere. The scalars sit in a local optimum that the tables were fitted
+    to. It is kept because it is cheap.
+- **Stiff-string attack** for struck and plucked strings. A free-running `additive` `attack` layer takes B,
+  `pdecay` and its table from early and late spectra, with a new envelope scalar `dly` (structural, never fitted)
+  so the sustain layer starts only at the loop.
+  - *Measured on Piano 293:* B = 3.3·10⁻⁴ (harmonic 14 is +55 cents sharp), and harmonic 5 decays 20 dB in 0.3 s
+    against 4 dB for harmonic 1. The plain model goes 0.74 → 0.76, but corrected it reaches 0.840 against 0.849
+    for the harmonic model. The higher score stays committed, and the alternative goes to listening.
+- **`spread`** (cents sd) on `additive`. The Strings loop measures each harmonic as a cluster of about 10 peaks
+  with a near-constant 12-cent sd, a chorus that 2-voice `unison` cannot make. Every partial becomes a Gaussian
+  cluster of components on the loop grid, so the loop stays exact.
+  - *Measured:* Strings 0.679 → 0.712, `d_loop` 0.14 → 0.05. The remaining error is the shimmer *pattern*, which,
+    like noise, can't match sample for sample.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

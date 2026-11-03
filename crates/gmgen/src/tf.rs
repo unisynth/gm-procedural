@@ -11,7 +11,7 @@ use crate::math::{cos_cycles, db, log2, sin_cycles, to_db};
 use alloc::vec;
 use alloc::vec::Vec;
 
-pub use crate::schema::{TF_BANDS as BANDS, TF_RATIO as RATIO, TF_TIMES as TIMES};
+pub use crate::schema::{ENV_TIMES, TF_BANDS as BANDS, TF_RATIO as RATIO, TF_TIMES as TIMES};
 const N: usize = 512;
 const HOP: usize = N / 4;
 
@@ -171,6 +171,56 @@ pub fn apply(x: &mut [f32], lp: Option<(usize, usize)>, rate: f32, tf: &[f32]) {
     }
 }
 
+/// Gain (dB) of the `env` table at time `t` s: linear between points, held after the last.
+pub fn env_db(env: &[f32], t: f32) -> f32 {
+    let n = env.len().min(ENV_TIMES.len());
+    if n == 0 {
+        return 0.0;
+    }
+    let mut j = 0;
+    while j + 1 < n && ENV_TIMES[j + 1] <= t {
+        j += 1;
+    }
+    if j + 1 >= n {
+        return env[n - 1];
+    }
+    let w = (t - ENV_TIMES[j]) / (ENV_TIMES[j + 1] - ENV_TIMES[j]);
+    env[j] + (env[j + 1] - env[j]) * w
+}
+
+/// Applies the fine envelope `env` (design D4d) in place: per-sample gain on the attack (whole unlooped wave). On a
+/// looped wave the gain fades to unity over the last 10 ms before the loop start; the loop is untouched.
+pub fn apply_env(x: &mut [f32], lp: Option<(usize, usize)>, rate: f32, env: &[f32]) {
+    let end = lp.map_or(x.len(), |(s, _)| s);
+    let f = ((0.01 * rate) as usize).max(1);
+    for (i, v) in x.iter_mut().enumerate().take(end) {
+        let mut g = env_db(env, i as f32 / rate);
+        if lp.is_some() {
+            g *= ((end - i) as f32 / f as f32).min(1.0);
+        }
+        *v *= db(g);
+    }
+}
+
+/// RMS level (dB) of `x` around each `env` point: window from the midpoint to the previous point to the midpoint
+/// to the next (≥ 1 ms, the last one reaching 50 ms further), clipped to `x`.
+pub fn measure_env(x: &[f32], rate: f32, n: usize) -> Vec<f32> {
+    let t = &ENV_TIMES[..n];
+    (0..n)
+        .map(|j| {
+            let lo = if j == 0 { 0.0 } else { (t[j - 1] + t[j]) / 2.0 };
+            let hi = if j + 1 < n { (t[j] + t[j + 1]) / 2.0 } else { t[j] + 0.05 };
+            let (lo, hi) = (lo.min(t[j] - 0.0005).max(0.0), hi.max(t[j] + 0.0005));
+            let (a, b) = ((lo * rate) as usize, ((hi * rate) as usize).min(x.len()));
+            if a >= b {
+                return -200.0;
+            }
+            let e: f32 = x[a..b].iter().map(|v| v * v).sum::<f32>() / (b - a) as f32;
+            to_db(crate::math::sqrt(e.max(1e-20)))
+        })
+        .collect()
+}
+
 /// Band energies in dB on the `tf` grid (`rows` × `BANDS`), measured over `x` with the same STFT: each frame's
 /// power is shared between neighbouring rows and bands by the interpolation weights.
 pub fn measure(x: &[f32], rate: f32, rows: usize) -> Vec<f32> {
@@ -196,6 +246,22 @@ pub fn measure(x: &[f32], rate: f32, rows: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A flat −6 dB `env` lowers every measured point by 6 dB; the loop is untouched.
+    #[test]
+    fn env_gain_lands() {
+        let rate = 22050.0;
+        let x: Vec<f32> = (0..9000).map(|i| sin_cycles(i as f32 * 1000.0 / rate) * 0.5).collect();
+        let mut env = [-6.0f32; 20];
+        env[0] = 0.0;
+        let mut y = x.clone();
+        apply_env(&mut y, Some((8000, 1000)), rate, &env);
+        let (a, b) = (measure_env(&x, rate, 20), measure_env(&y, rate, 20));
+        for j in 5..20 {
+            assert!((b[j] - a[j] + 6.0).abs() < 0.1, "point {j} moved {}", b[j] - a[j]);
+        }
+        assert_eq!(y[8000..], x[8000..]);
+    }
 
     #[test]
     fn fft_round_trips() {

@@ -35,7 +35,7 @@ pub fn from_json(text: &str) -> Result<WaveFile, String> {
         }
     }
     for key in o.keys() {
-        if !matches!(key.as_str(), "wave" | "placeholder" | "note" | "layers" | "correction" | "tf")
+        if !matches!(key.as_str(), "wave" | "placeholder" | "note" | "layers" | "correction" | "tf" | "env")
             && WAVE.iter().all(|s| s.name != key)
         {
             return Err(format!("unknown key \"{key}\""));
@@ -90,6 +90,9 @@ pub fn from_json(text: &str) -> Result<WaveFile, String> {
                 p.tf.push(f(x, "tf")?);
             }
         }
+    }
+    if let Some(c) = o.get("env").and_then(Value::as_array) {
+        p.env = c.iter().map(|x| f(x, "env")).collect::<Result<_, _>>()?;
     }
     p.validate()?;
     Ok(WaveFile {
@@ -154,6 +157,9 @@ pub fn to_json(w: &WaveFile) -> String {
     if !w.params.tf.is_empty() {
         let rows = w.params.tf.chunks(crate::schema::TF_BANDS).map(|r| Value::Array(r.iter().map(|x| num(*x)).collect()));
         o.insert("tf".into(), Value::Array(rows.collect()));
+    }
+    if !w.params.env.is_empty() {
+        o.insert("env".into(), Value::Array(w.params.env.iter().map(|x| num(*x)).collect()));
     }
     let mut s = String::new();
     pretty(&Value::Object(o), 0, &mut s);
