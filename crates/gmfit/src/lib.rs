@@ -154,14 +154,16 @@ pub fn save_scores(m: &serde_json::Map<String, Value>) -> Result<(), String> {
     std::fs::write(assets_dir().join("scores.json"), format!("{{\n{}\n}}\n", lines.join(",\n"))).map_err(|e| e.to_string())
 }
 
-/// Tier of a score (design D6).
-pub fn tier(s: f32) -> &'static str {
-    if s >= 0.95 {
-        "A"
-    } else if s >= 0.85 {
-        "B"
-    } else {
+/// Tier of a score (design D6, calibrated on the pilot listening, task 6.2): the approved pilot waves scored
+/// 0.71–0.89. A texture flag heard as a defect (buzz, clipping, loop click, silence, NaN) keeps a wave in C.
+pub fn tier(s: &score::Score) -> &'static str {
+    let defect = s.flags.iter().any(|f| matches!(*f, "buzz" | "clipped" | "loop_click" | "silent" | "nan"));
+    if defect || s.score < 0.70 {
         "C"
+    } else if s.score >= 0.85 {
+        "A"
+    } else {
+        "B"
     }
 }
 

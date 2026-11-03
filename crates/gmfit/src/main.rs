@@ -86,7 +86,7 @@ fn main() {
             let mut rep = json!({
                 "wave": i, "category": cat, "instruments": names, "rate": m.rate, "len": m.len,
                 "loop": m.looped, "unity": m.unity, "placeholder": wf.placeholder, "numbers": wf.params.numbers(),
-                "layers": layers, "tier": gmfit::tier(s.score), "dir": dir.display().to_string(),
+                "layers": layers, "tier": gmfit::tier(&s), "dir": dir.display().to_string(),
             });
             rep.as_object_mut().unwrap().extend(s.json().as_object().unwrap().clone());
             if let Some(p) = plain {
@@ -183,8 +183,49 @@ fn main() {
             let kept = gmfit::keep_if_better(&orig, i, gmgen::params_json::WaveFile { params: p, ..wf }, after).unwrap_or_else(|e| die(e));
             println!("{}", json!({"wave": i, "before": score::r4(before), "after": score::r4(after), "written": kept}));
         }
+        Some("bulk") => {
+            // bulk (--cat <category> | <w>...) [--iters N] [--rounds N] [--jobs N]: full pipeline per wave from the
+            // original, waves in parallel; each result is written only if it beats the committed score.
+            let iters = opt("--iters").map_or(160, |v| v.parse().unwrap_or_else(|_| die("--iters: number")));
+            let rounds = opt("--rounds").map_or(2, |v| v.parse().unwrap_or_else(|_| die("--rounds: number")));
+            let jobs = opt("--jobs").map_or(4, |v| v.parse().unwrap_or_else(|_| die("--jobs: number")));
+            let waves: Vec<usize> = match opt("--cat") {
+                Some(c) => (0..gmgen::wave_count()).filter(|&i| gmfit::users(i).1 == c).collect(),
+                None => args[1..]
+                    .iter()
+                    .enumerate()
+                    .filter(|(k, _)| !args[*k].starts_with("--"))
+                    .filter_map(|(_, a)| a.parse().ok())
+                    .collect(),
+            };
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let next = std::sync::atomic::AtomicUsize::new(0);
+            let write = std::sync::Mutex::new(());
+            eprintln!("bulk: {} waves, {jobs} jobs", waves.len());
+            std::thread::scope(|sc| {
+                for _ in 0..jobs {
+                    sc.spawn(|| loop {
+                        let k = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let Some(&i) = waves.get(k) else { break };
+                        let o = orig.wave(i);
+                        let t = std::time::Instant::now();
+                        // One wave's panic must not end the batch: log it and go on.
+                        let Ok((p, after)) = std::panic::catch_unwind(|| gmfit::fit::pipeline(&o, i, iters, rounds, 1)) else {
+                            println!("{}", json!({"wave": i, "error": "panic"}));
+                            continue;
+                        };
+                        let _g = write.lock().unwrap();
+                        let wf = gmfit::load_wave(i).unwrap_or_else(|e| die(e));
+                        let before = gmfit::fit::score_of(&o, i, &wf.params);
+                        let kept = gmfit::keep_if_better(&orig, i, gmgen::params_json::WaveFile { params: p, ..wf }, after)
+                            .unwrap_or_else(|e| die(e));
+                        println!("{}", json!({"wave": i, "before": score::r4(before), "after": score::r4(after), "written": kept, "secs": t.elapsed().as_secs()}));
+                    });
+                }
+            });
+        }
         Some("report") => report(flag("--check"), flag("--baseline")),
-        _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | refine <w> | render <w> [-p f] | sweep <w> <param> <values> | report [--check] [--baseline]"),
+        _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | refine <w> | render <w> [-p f] | sweep <w> <param> <values> | bulk (--cat c | <w>...) [--iters n] [--rounds n] [--jobs n] | report [--check] [--baseline]"),
     }
 }
 
@@ -227,7 +268,7 @@ fn report(check: bool, baseline: bool) {
         let (cat_names, cat) = gmfit::users(*i);
         match r {
             Ok((s, ph, nums, _, _)) => {
-                *tiers.entry(gmfit::tier(s.score)).or_default() += 1;
+                *tiers.entry(gmfit::tier(&s)).or_default() += 1;
                 placeholders += *ph as usize;
                 new_scores.insert(i.to_string(), s.json());
                 let first = cat_names.first().cloned().unwrap_or_default();
@@ -238,7 +279,7 @@ fn report(check: bool, baseline: bool) {
                         "| {i} | {} | {:.4} | {} | {:.2} | {:.2} | {:.2} | {} | {nums} | {}{} |",
                         first.replace('|', "/"),
                         s.score,
-                        gmfit::tier(s.score),
+                        gmfit::tier(&s),
                         s.d_spec,
                         s.d_env,
                         s.d_loop,

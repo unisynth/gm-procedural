@@ -169,7 +169,7 @@ Both waves are "played": the attack, then the loop repeated to 0.5 s.
 | `d_loop` | mean dB difference of the loop's exact DFT bins (DC excluded) |
 
 `score = exp(−(d_spec/12 + d_onset/12 + d_env/6 + d_loop/12))`. A-weighting and the onset term came from listening:
-the kick's missing click had cost almost nothing. Tiers: A ≥ 0.95, B ≥ 0.85, C below that. Flags: `silent`,
+the kick's missing click had cost almost nothing. Tiers: A ≥ 0.85, B ≥ 0.70, C below that; a `buzz`, `clipped`, `loop_click`, `silent` or `nan` flag means C. Flags: `silent`,
 `clipped`, `nan`, `env_off` (10 ms span > 6 dB off where the original is above −40 dB), `pitch_off` (autocorrelation
 f0 > 5 cents off, pitched waves only) and `loop_click`.
 

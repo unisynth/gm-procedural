@@ -222,6 +222,23 @@ but *periodicity* did not (3–6 kHz: original 0.80, round 8 0.56). Noise bands 
 Score 0.812 → 0.797 (`d_loop`: 10–10.8 kHz groups and h19/h22). Accepted on listening. A `skirt` model of the
 wide clusters was tried and rejected (D4k).
 
+## Approval and calibration (task 6.2)
+
+The user approved the pilot after round 10 ("it sounds ok"). Approved scores: kick 0.709, hat 0.718, snare
+0.741, piano 0.757, strings 0.797, bass 0.889. The tiers are now A ≥ 0.85, B ≥ 0.70, with a defect flag
+(buzz, clipped, loop_click, silent, nan) forcing C. The weights are unchanged from round 4. The rejected rounds
+failed on things the score could not see, so the rule for the bulk fit is: tier plus the `measure.py` checks.
+
+## Bulk pass 1: drum kits
+
+`gmfit bulk --cat drums --jobs 4` (about 70 min for 91 waves): 4 A, 13 B, 74 C, bank mean 0.069 → 0.162.
+- About 30 of the "drums" waves are SFX-kit sounds (Bird, Applause, Helicopter, Seashore…), mostly 0.03–0.4.
+- Kit percussion falls back to `noise` where the prior asks for `modal`/`shaker`, which do not exist yet:
+  agogo, claves, wood blocks, triangle, tambourine, cabasa, maracas, shaker (0.4–0.6).
+- Belltree (wave 49, key 84) at 0.04: a 646-sample loop (per = 1) whose energy sits in 95 sparse bins at
+  7.5–10.5 kHz, above the dense `harm` table's reach and the 0.45·rate cutoff. It needs sparse loop partials.
+- Bug found: `correct_env`'s one-shot tail step indexed an empty env table when no pass was kept (fixed).
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.

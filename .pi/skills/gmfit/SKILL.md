@@ -35,6 +35,7 @@ $G fit 405 --iters 200              # CMA-ES over the explicit scalars (structur
 $G correct 405                      # harmonic → tf → env tables, gap noise, phase seed
 $G refine 405 --rounds 3 --iters 100
 $G sweep 405 0.level_db -12,-6,0    # <layer>.<scalar> (or a wave scalar); rows sheet build/gm/405/sweep.png
+$G bulk --cat drums --jobs 4        # whole pipeline from the original per wave (or list waves); keeps only improvements
 $G report --check                   # whole bank vs assets/gm/scores.json: fails on any drop > 0.005
 $G report --baseline                # after an accepted change: rewrite scores.json
 ```
@@ -54,7 +55,7 @@ $G report --baseline                # after an accepted change: rewrite scores.j
 and `refine` give before, after and written. `build/gm/NNN/report.json` holds the same as `render`.
 `GMFIT_TRACE=1` prints refine rounds, correction passes, gap-noise candidates and phase-seed choices.
 `GMFIT_DUMP=/tmp/x.json` writes the best gap-noise candidate even when it is not kept, so you can listen to it or
-render it with `-p`. `render` exits with code 2 for a tier-C wave (scores below B), so chain with `;` not `&&`.
+render it with `-p`. `render` exits with code 2 when any flag is set (even `pitch_off`), so chain with `;` not `&&`.
 
 **Placeholders** (`"placeholder": true`, score ≈ 0.01) often show `pitch_off` with f0 at 2×. Run `analyze --force`.
 

@@ -386,7 +386,10 @@ Flags:
 - `loop_click`: the wrap-step bound from the spec is exceeded.
 - `silent`, `clipped`, `nan`.
 
-Tiers for the report: A ≥ 0.95, B ≥ 0.85, C below that.
+Tiers for the report, calibrated on the pilot listening (task 6.2): A ≥ 0.85, B ≥ 0.70, C below that. A wave with a
+defect flag (`buzz`, `clipped`, `loop_click`, `silent`, `nan`) is C whatever its score. The approved pilot waves
+scored 0.71–0.89, and every rejected round had a cause the score could not see (a missing click, an abrupt end,
+buzz, hiss); those causes now have flags or `measure.py` checks. The weights stay as in round 4.
 
 ### D7. Fit = analysis initialisation, then CMA-ES
 `gmfit analyze` derives a starting point:

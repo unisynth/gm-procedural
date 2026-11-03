@@ -91,7 +91,7 @@ skip when `GM_DLS` is unset.
 - [x] 6.1 Fit the pilot set: Standard kit kick (key 36), snare (38), closed hat (42), Fingered Bass (program 33),
   Strings (program 48), and Piano 1 wave 293. Record the scores, the sheets and an A/B listening note per wave in
   `research/gm-procedural-pilot.md`. Verify the file lists all 6 with scores.
-- [ ] 6.2 Calibrate the score weights and tier thresholds against listening. Re-baseline `scores.json`. Show the
+- [x] 6.2 Calibrate the score weights and tier thresholds against listening. Re-baseline `scores.json`. Show the
   pilot A/B to the user and get confirmation before the bulk fit. Verify the user approved and the weights are noted
   in the research file.
 - [x] 6.2a Pilot listening feedback ("not good"): add the time × band correction `tf` (D4c) in `gmgen/src/tf.rs`
@@ -159,7 +159,10 @@ Each task: fit every wave of the group, commit the parameters and scores, and ma
 report lists the group with no wave in tier C, or each tier-C wave carries a note in the pilot research file
 explaining the limit.
 
-- [ ] 8.1 Drum kits (91 waves)
+- [ ] 8.1 Drum kits (91 waves). First pass done with `gmfit bulk --cat drums` (analyze → fit → correct_all →
+  refine; failed waves logged, not fatal): 4 A, 13 B, 74 C, no placeholders left. ~30 of the 91 are SFX-kit waves
+  (Bird, Applause…). Kit percussion on keys 54 and 67–84 fell back to `noise`: it needs `modal` (7.2) and `shaker`
+  (7.5). Re-run after those.
 - [ ] 8.2 Bass (30) and guitar (48)
 - [ ] 8.3 Organ (28), pipe (27) and reed (46)
 - [ ] 8.4 Brass (37), strings (32) and ensemble (15)

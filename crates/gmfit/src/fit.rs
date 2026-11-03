@@ -393,7 +393,8 @@ pub fn correct_env(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     }
     // One-shot end: the score hardly sees the last milliseconds, so the best pass can still end too loud (a cut
     // where the original has faded). Settle the last point alone; keep it unless the score drops by > 0.002.
-    if past_end {
+    // (Only when a pass was kept: the start may have no env table.)
+    if past_end && best.0.env.len() == n {
         let mut q = best.0.clone();
         for _ in 0..6 {
             let mg = measure(&gmgen::render_wave(i, &q));
@@ -451,6 +452,27 @@ pub fn refine(orig: &[f32], i: usize, start: &Params, rounds: usize, iters: usiz
         if gain < 0.002 {
             break;
         }
+    }
+    best
+}
+
+/// The whole per-wave pipeline from the original (skill "Loop"): analyze → fit → correct_all → refine.
+/// Returns the best seen with its score.
+pub fn pipeline(orig: &[f32], i: usize, iters: usize, rounds: usize, seed: u64) -> (Params, f32) {
+    let m = gmgen::bank::meta(i).expect("wave meta");
+    let p = crate::analyze::analyze(i, orig, &m).params;
+    let mut best = (p.clone(), score_of(orig, i, &p));
+    let (p, s) = fit(orig, i, &best.0, iters, seed, None);
+    if s > best.1 {
+        best = (p, s);
+    }
+    let (p, s) = correct_all(orig, i, &best.0);
+    if s > best.1 {
+        best = (p, s);
+    }
+    let (p, s) = refine(orig, i, &best.0, rounds, iters / 2, seed + 1);
+    if s > best.1 {
+        best = (p, s);
     }
     best
 }
