@@ -5,3 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+
+[features]
+# DLS writer (`dls::write`), needs `alloc`. Default build stays allocation-free.
+write = []

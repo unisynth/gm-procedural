@@ -11,8 +11,15 @@
 //! Every read is bounds-checked; malformed data yields `Err`/`None`, never a panic.
 #![cfg_attr(not(test), no_std)]
 
+#[cfg(feature = "write")]
+extern crate alloc;
+
 #[cfg(test)]
 mod tests;
+#[cfg(feature = "write")]
+pub mod write;
+#[cfg(all(test, feature = "write"))]
+mod write_tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {

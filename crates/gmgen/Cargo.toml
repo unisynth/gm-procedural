@@ -1,0 +1,13 @@
+[package]
+name = "gmgen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dls = { path = "../dls", features = ["write"] }
+serde_json = { version = "1", optional = true }
+
+[features]
+# Host-side helpers: structure JSON (de)serialisation, bank selection policy.
+std = ["dep:serde_json"]

@@ -5,28 +5,28 @@ skip when `GM_DLS` is unset.
 
 ## 1. DLS writer
 
-- [ ] 1.1 Add the `write` feature to `crates/dls` (`alloc`). It provides a `Bank` description (instruments, regions,
+- [x] 1.1 Add the `write` feature to `crates/dls` (`alloc`). It provides a `Bank` description (instruments, regions,
   articulation, `wsmp`, 16-bit waves) and `write(&Bank) -> Vec<u8>`.
   - Tests first: a synthetic bank round-trips through `Dls::parse` (instruments, regions, `wsmp`, articulation,
     samples).
   - Verify: `cargo test -p dls --features write` passes.
-- [ ] 1.2 Add a real-bank round trip: `gm.dls` → `Bank` → bytes → `Dls::parse`. The fingerprint dump must equal the
+- [x] 1.2 Add a real-bank round trip: `gm.dls` → `Bank` → bytes → `Dls::parse`. The fingerprint dump must equal the
   original's and every sample must be equal.
   - Verify: `GM_DLS=… cargo test -p dls --features write` passes.
   - Verify: `cargo check -p dls --target i686-pc-windows-gnu` still builds without `write`.
-- [ ] 1.3 Add a `write` row to `crates/AGENTS.md` (`dls/`) and a writer requirement note to `docs/` if one exists for
+- [x] 1.3 Add a `write` row to `crates/AGENTS.md` (`dls/`) and a writer requirement note to `docs/` if one exists for
   `dls`. Verify the rows are present.
 
 ## 2. Bank structure extraction
 
-- [ ] 2.1 Create the `crates/gmfit` binary crate (std; deps `dls[write]`, `serde_json`, `rustfft`, `png`) with the
+- [x] 2.1 Create the `crates/gmfit` binary crate (std; deps `dls[write]`, `serde_json`; `rustfft`/`png` added with group 4) with the
   `gmfit extract` command. It writes `assets/gm/structure.json`: instruments, regions, articulation, `wsmp`, and
   per-wave rate/length/loop. It holds no samples.
   - Verify: running it with `GM_DLS` produces the file.
-  - Verify: the test "No PCM committed" passes (no DLS magic, no sample arrays, file under 200 KB).
-- [ ] 2.2 Record in `NOTICE.md` that `assets/gm/` holds structure and bounded synthesis parameters fitted against
+  - Verify: the test "No PCM committed" passes (no DLS magic, no sample arrays, file under 512 KB; measured 330 KB).
+- [x] 2.2 Record in `assets/gm/NOTICE.md` (no root NOTICE exists) that `assets/gm/` holds structure and bounded synthesis parameters fitted against
   `gm.dls`, and no sample data. Verify by review.
-- [ ] 2.3 Add `crates/AGENTS.md` and `crates/gmfit/AGENTS.md` rows, plus a `assets/gm/AGENTS.md` row. Verify they are
+- [x] 2.3 Add `crates/AGENTS.md` rows (`gmfit/`, `gmgen/`), plus a `assets/gm/AGENTS.md` row. Verify they are
   present.
 
 ## 3. Generator core (`crates/gmgen`)

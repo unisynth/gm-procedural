@@ -1,0 +1,10 @@
+[package]
+name = "gmfit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dls = { path = "../dls", features = ["write"] }
+gmgen = { path = "../gmgen", features = ["std"] }
+serde_json = "1"
