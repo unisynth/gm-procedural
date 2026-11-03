@@ -59,8 +59,8 @@ static ADDITIVE: [Scalar; 18] = with_env![
         s("pdecay", 0.0, 10.0, 0.0), // extra decay rate per partial index (1/s per harmonic above 1)
         s("inharm", 0.0, 0.02, 0.0), // stiff-string B
         s("even_db", -48.0, 24.0, 0.0),
-        s("unison", 1.0, 3.0, 1.0),
-        s("detune", 0.0, 50.0, 0.0), // cents between unison voices
+        s("unison", 1.0, 8.0, 1.0),
+        s("detune", 0.0, 50.0, 0.0), // cents spread of the unison voices (outermost pair)
         s("vib_rate", 0.0, 12.0, 0.0),
         s("vib_cents", 0.0, 100.0, 0.0),
         s("scoop_cents", -200.0, 200.0, 0.0),

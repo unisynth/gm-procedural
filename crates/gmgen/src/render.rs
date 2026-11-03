@@ -1,4 +1,4 @@
-//! Wave rendering: layer regions (design D3), shared envelope, exact integer phasors, biquads, and the dispatch to
+//! Wave rendering: layer regions (design D3), a final soft knee above 0.9 (never full scale), shared envelope, exact integer phasors, biquads, and the dispatch to
 //! the family modules in `fam/`.
 use crate::fam;
 use crate::math::{self, exp, sin_cycles};
@@ -215,5 +215,19 @@ pub fn render(meta: &WaveMeta, p: &Params, seed: u32) -> Vec<f32> {
     if !p.correction.is_empty() {
         crate::correct::apply(&mut out, lp, f0(meta, p), rate, &p.correction);
     }
+    out.iter_mut().for_each(|x| *x = soft_knee(*x));
     out
+}
+
+/// Identity below 0.9; above, a smooth rational-tanh knee that approaches (never reaches) full scale.
+#[inline]
+pub fn soft_knee(x: f32) -> f32 {
+    let a = x.abs();
+    if a <= 0.9 {
+        return x;
+    }
+    let u = (a - 0.9) * 10.0;
+    // tanh(u) ≈ u(27 + u²) / (27 + 9u²), monotone and < 1 for u ≥ 0.
+    let t = (u * (27.0 + u * u) / (27.0 + 9.0 * u * u)).min(0.999);
+    (0.9 + 0.1 * t).copysign(x)
 }

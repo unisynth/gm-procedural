@@ -54,7 +54,7 @@ impl Var {
     }
 }
 
-/// Free variables: every explicit layer scalar, plus `gain_db`; `only` (names like `0.d`, `gain_db`) narrows it.
+/// Free variables: every explicit layer scalar; `only` (names like `0.d`, `gain_db`) narrows it or adds `gain_db`.
 fn vars(p: &Params, only: Option<&[String]>) -> Vec<Var> {
     let mut v = Vec::new();
     let keep = |name: String| only.is_none_or(|o| o.contains(&name));
@@ -74,7 +74,8 @@ fn vars(p: &Params, only: Option<&[String]>) -> Vec<Var> {
             }
         }
     }
-    if keep("gain_db".into()) {
+    // `gain_db` duplicates the layer levels; only when asked for.
+    if only.is_some_and(|o| o.iter().any(|x| x == "gain_db")) {
         v.push(Var { layer: None, idx: 0, lo: WAVE[0].min.max(-24.0), hi: WAVE[0].max.min(24.0), log: false });
     }
     v
@@ -120,7 +121,67 @@ pub fn fit(orig: &[f32], i: usize, start: &Params, iters: usize, seed: u64, only
         }
     }
     let (p, s) = refine_harmonics(orig, i, &best, best_score);
-    (p, s)
+    refine_bands(orig, i, &p, s)
+}
+
+/// Mean power spectrum (Hann 2048, half overlap) of `x`.
+fn avg_power(x: &[f32]) -> Vec<f32> {
+    let n = 2048;
+    let fft = FftPlanner::<f32>::new().plan_fft_forward(n);
+    let mut acc = vec![0.0f32; n / 2 + 1];
+    let mut start = 0;
+    let mut frames = 0;
+    while start < x.len().max(1) {
+        let mut buf: Vec<Complex32> = (0..n)
+            .map(|k| {
+                let w = 0.5 - 0.5 * (std::f32::consts::TAU * k as f32 / n as f32).cos();
+                Complex32::new(x.get(start + k).copied().unwrap_or(0.0) * w, 0.0)
+            })
+            .collect();
+        fft.process(&mut buf);
+        acc.iter_mut().zip(&buf).for_each(|(a, c)| *a += c.norm_sqr());
+        frames += 1;
+        start += n / 2;
+    }
+    acc.iter().map(|a| a / frames as f32).collect()
+}
+
+/// Moves each `noise` band gain by the band's average-spectrum level error (between neighbouring band centres,
+/// geometric edges); 3 passes, each kept only if the score improves.
+pub fn refine_bands(orig: &[f32], i: usize, start: &Params, start_score: f32) -> (Params, f32) {
+    let m = gmgen::bank::meta(i).unwrap();
+    let rate = m.rate as f32;
+    let (mut best, mut best_score) = (start.clone(), start_score);
+    let po = avg_power(&crate::audio::played(orig, &m, crate::score::PLAYED_SECS));
+    for li in 0..best.layers.len() {
+        if FAMILIES[best.layers[li].family].name != "noise" || best.layers[li].tables[0].is_empty() {
+            continue;
+        }
+        for _ in 0..3 {
+            let synth = gmgen::render_wave(i, &best);
+            let pg = avg_power(&crate::audio::played(&synth, &m, crate::score::PLAYED_SECS));
+            let mut p = best.clone();
+            let centres: Vec<f32> = p.layers[li].tables[0].chunks(3).map(|b| b[0]).collect();
+            let bin = |hz: f32| ((hz / rate * 2048.0) as usize).min(1024);
+            for (k, b) in p.layers[li].tables[0].chunks_mut(3).enumerate() {
+                let lo = if k == 0 { b[0] / 1.5 } else { (centres[k - 1] * b[0]).sqrt() };
+                let hi = if k + 1 == centres.len() { (b[0] * 1.5).min(rate / 2.0) } else { (centres[k + 1] * b[0]).sqrt() };
+                let (a, z) = (bin(lo), bin(hi).max(bin(lo) + 1));
+                let (eo, eg) = (po[a..z].iter().sum::<f32>(), pg[a..z].iter().sum::<f32>());
+                if eo > 0.0 && eg > 0.0 {
+                    b[2] = (b[2] + (10.0 * (eo / eg).log10()).clamp(-12.0, 12.0)).clamp(-60.0, 24.0);
+                }
+            }
+            let sc = score_of(orig, i, &p);
+            if sc > best_score {
+                best = p;
+                best_score = sc;
+            } else {
+                break;
+            }
+        }
+    }
+    (best, best_score)
 }
 
 /// Loop DFT magnitudes (bins 0..=L/2).

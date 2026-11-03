@@ -89,6 +89,47 @@ fn bands(power: &[f32], rate: f32) -> Vec<f32> {
     out
 }
 
+/// Pitch track of a decaying body: periods between upward zero crossings of the one-pole low-passed signal
+/// (cutoff `lp` Hz). Returns `(time s, Hz)` pairs.
+fn zero_cross_track(x: &[f32], rate: f32, lp: f32) -> Vec<(f32, f32)> {
+    let k = 1.0 - (-std::f32::consts::TAU * lp / rate).exp();
+    let mut y = 0.0f32;
+    let mut prev = 0.0f32;
+    let mut last: Option<f32> = None;
+    let mut out = Vec::new();
+    let peak = x.iter().fold(0.0f32, |a, v| a.max(v.abs()));
+    for (i, v) in x.iter().enumerate() {
+        y += k * (v - y);
+        if prev < 0.0 && y >= 0.0 && peak > 0.0 {
+            let t = (i as f32 - 1.0 + prev / (prev - y)) / rate;
+            if let Some(l) = last {
+                let f = 1.0 / (t - l);
+                if (20.0..2000.0).contains(&f) {
+                    out.push(((t + l) / 2.0, f));
+                }
+            }
+            last = Some(t);
+        }
+        prev = y;
+    }
+    out
+}
+
+/// Fit-relevant scalars made explicit (so `fit` tunes them) with their current values.
+fn open_for_fit(l: &mut Layer) {
+    let names: &[&str] = match gmgen::schema::FAMILIES[l.family].name {
+        "additive" => &["level_db", "a", "h", "d", "s", "tilt", "tilt_t"],
+        "noise" => &["level_db", "a", "h", "d", "s", "hp", "lp"],
+        "drum" => &["level_db", "freq", "ratio", "sweep_t", "decay", "a", "shape", "drive", "click_db", "click_decay"],
+        "metal" => &["level_db", "base", "bp", "q", "hp", "a", "d", "d2", "split", "noise"],
+        _ => &[],
+    };
+    for n in names {
+        let v = l.get(n);
+        l.set(n, v);
+    }
+}
+
 fn rms(x: &[f32]) -> f32 {
     (x.iter().map(|v| v * v).sum::<f32>() / x.len().max(1) as f32).sqrt()
 }
@@ -272,13 +313,31 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
             let peak_win = (0.05 * rate) as usize;
             let target = rms(&orig[..peak_win.min(orig.len())]);
             calibrate(i, &mut p, 0, target, 0..peak_win.min(orig.len()));
-            if prior.kind == Kind::Snare {
+            if matches!(prior.kind, Kind::Metal(_)) {
+                // Sampled cymbals/hats are broadband: a noise layer shaped by the measured spectrum beside the
+                // metallic oscillators.
                 let mut nz = attack_layer("noise", &prior, orig, rate, region, orig.len());
                 nz.set("level_db", -12.0);
                 p.layers.push(nz);
                 calibrate(i, &mut p, 1, target * 0.7, 0..peak_win.min(orig.len()));
             }
+            if prior.kind == Kind::Snare {
+                let mut nz = attack_layer("noise", &prior, orig, rate, region, orig.len());
+                // Wires: the bands below twice the body frequency belong to the drum layer.
+                let body = p.layers[0].get("freq");
+                for b in nz.tables[0].chunks_mut(3) {
+                    if b[0] < 2.0 * body {
+                        b[2] = -60.0;
+                    }
+                }
+                nz.set("level_db", -12.0);
+                p.layers.push(nz);
+                calibrate(i, &mut p, 1, target * 0.7, 0..peak_win.min(orig.len()));
+            }
         }
+    }
+    for l in &mut p.layers {
+        open_for_fit(l);
     }
     let _ = p.validate();
     WaveFile { wave: i as u32, params: p, placeholder: false, note: format!("analyze: prior {:?}", prior.kind).chars().take(80).collect() }
@@ -290,20 +349,47 @@ fn attack_layer(f: &str, prior: &Prior, x: &[f32], rate: f32, region: Region, un
     let seg = &x[..until.min(x.len())];
     let frame = (0.002 * rate) as usize;
     let env = rms_env(seg, frame);
-    let (kp, peak) = env.iter().enumerate().fold((0, f32::MIN), |b, (k, v)| if *v > b.1 { (k, *v) } else { b });
-    // 1/e (−8.7 dB) decay time after the peak.
-    let k1 = env.iter().skip(kp).position(|v| *v < peak - 8.7).unwrap_or(env.len().saturating_sub(kp));
-    let decay = (k1 as f32 * frame as f32 / rate).clamp(0.003, 5.0);
+    // Body peak: the loudest frame after the first 5 ms (an onset click must not set the decay).
+    let skip = ((0.005 * rate) as usize / frame).min(env.len().saturating_sub(1));
+    let (kp, peak) = env.iter().enumerate().skip(skip).fold((skip, f32::MIN), |b, (k, v)| if *v > b.1 { (k, *v) } else { b });
+    // Exponential decay by a least-squares line through the dB envelope from the peak down to peak − 40 dB.
+    let pts: Vec<(f32, f32)> = env
+        .iter()
+        .enumerate()
+        .skip(kp)
+        .take_while(|(_, v)| **v > peak - 40.0)
+        .map(|(k, v)| (k as f32 * frame as f32 / rate, *v))
+        .collect();
+    let decay = if pts.len() >= 3 {
+        let n = pts.len() as f32;
+        let (mx, my) = (pts.iter().map(|p| p.0).sum::<f32>() / n, pts.iter().map(|p| p.1).sum::<f32>() / n);
+        let slope = pts.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum::<f32>() / pts.iter().map(|p| (p.0 - mx).powi(2)).sum::<f32>().max(1e-12);
+        if slope < -1e-3 { (-8.686 / slope).clamp(0.003, 5.0) } else { 2.0 }
+    } else {
+        0.05
+    };
     match f {
         "drum" => {
-            let late = pitch(seg, (seg.len() / 3).min(seg.len()), rate).or_else(|| pitch(seg, 0, rate)).unwrap_or(60.0);
-            let early = pitch(&seg[..seg.len().min((0.03 * rate) as usize)], 0, rate).unwrap_or(late * 1.5);
+            // Body pitch glide from zero crossings below 400 Hz: end = median of the last half, start = first.
+            let tr = zero_cross_track(seg, rate, 400.0);
+            let (late, early, tau) = if tr.len() >= 3 {
+                let mut tail: Vec<f32> = tr[tr.len() / 2..].iter().map(|x| x.1).collect();
+                tail.sort_by(f32::total_cmp);
+                let end = tail[tail.len() / 2];
+                let start = tr[0].1.max(end);
+                let target = end + (start - end) / std::f32::consts::E;
+                let tau = tr.iter().find(|x| x.1 <= target).map_or(0.03, |x| x.0.max(0.002));
+                (end, start, tau)
+            } else {
+                let f = pitch(seg, 0, rate).unwrap_or(60.0);
+                (f, f * 1.5, 0.03)
+            };
             l.set("freq", late.clamp(20.0, 2000.0));
             l.set("ratio", (early / late).clamp(1.0, 8.0));
+            l.set("sweep_t", tau.clamp(0.001, 1.0));
             l.set("decay", decay.clamp(0.005, 10.0));
-            if prior.kind == Kind::Snare {
-                l.set("click_db", -20.0);
-            }
+            l.set("a", ((kp as f32 + 0.5) * frame as f32 / rate).clamp(0.0, 0.05));
+            l.set("click_db", if prior.kind == Kind::Snare { -20.0 } else { -30.0 });
         }
         "metal" => {
             let pw = avg_power(seg);

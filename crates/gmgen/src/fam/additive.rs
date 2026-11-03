@@ -71,7 +71,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         if fk > nyq {
             break;
         }
-        let a = db(a_db) * level * if k % 2 == 0 { even } else { 1.0 } / unison as f32;
+        let a = db(a_db) * level * if k % 2 == 0 { even } else { 1.0 } / sqrt(unison as f32);
         for (j, v) in amp.iter_mut().enumerate() {
             let t = ctx.t(j * CR);
             let mut x = env[j] * a;
@@ -85,7 +85,12 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         }
         let ph0 = phase.get(k - 1).copied().unwrap_or(-(kf * (kf - 1.0)) / (2.0 * k_table.max(8) as f32));
         for u in 0..unison {
-            let off = if unison == 1 { 0.0 } else { u as f32 / (unison - 1) as f32 - 0.5 };
+            // Voices spread over ±detune/2; with more than 3 voices the inner ones get a fixed pseudo-random jitter
+            // so an ensemble does not beat in a regular pattern.
+            let mut off = if unison == 1 { 0.0 } else { u as f32 / (unison - 1) as f32 - 0.5 };
+            if unison > 3 && u > 0 && u + 1 < unison {
+                off += (crate::math::fract(u as f32 * 0.618_034 + 0.3) - 0.5) * 0.6 / (unison - 1) as f32;
+            }
             let fu = fk * crate::math::exp2(off * detune / 1200.0);
             let nk = ctx.grid(fu);
             if nk == 0 || ctx.hz(nk) > nyq {

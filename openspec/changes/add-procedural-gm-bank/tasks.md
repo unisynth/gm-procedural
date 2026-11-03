@@ -88,7 +88,7 @@ skip when `GM_DLS` is unset.
 
 ## 6. Pilot and calibration (checkpoint with user)
 
-- [ ] 6.1 Fit the pilot set: Standard kit kick (key 36), snare (38), closed hat (42), Fingered Bass (program 33),
+- [x] 6.1 Fit the pilot set: Standard kit kick (key 36), snare (38), closed hat (42), Fingered Bass (program 33),
   Strings (program 48), and Piano 1 wave 293. Record the scores, the sheets and an A/B listening note per wave in
   `research/gm-procedural-pilot.md`. Verify the file lists all 6 with scores.
 - [ ] 6.2 Calibrate the score weights and tier thresholds against listening. Re-baseline `scores.json`. Show the

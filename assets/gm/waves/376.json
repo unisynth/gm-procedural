@@ -1,19 +1,23 @@
 {
   "wave": 376,
-  "placeholder": true,
+  "note": "analyze: prior Drum",
   "layers": [
     {
-      "family": "additive",
+      "family": "drum",
       "region": "whole",
       "p": {
-        "a": 0.005,
-        "d": 0.25,
-        "s": 0.0,
-        "level_db": -12.0
+        "level_db": 6.79697,
+        "freq": 72.2841,
+        "ratio": 2.69234,
+        "sweep_t": 0.00460632,
+        "decay": 0.0193727,
+        "a": 0.0495288,
+        "shape": 0.0765167,
+        "drive": 0.39214,
+        "click_db": -30.0554,
+        "click_decay": 0.00131897
       },
-      "t": {
-        "harm": [0.0, -6.0, -10.0, -13.0, -16.0, -18.0, -20.0, -22.0]
-      }
+      "t": {}
     }
   ]
 }

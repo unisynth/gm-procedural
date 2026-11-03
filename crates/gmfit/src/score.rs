@@ -1,7 +1,7 @@
 //! Similarity score (design D6) of a generated wave against the original, on the "played" signals.
 //!
 //! - `d_spec`: mean |dB| difference of log-mel spectrograms at three STFT sizes (≥ 2 periods/512/2048, hop size/4, Hann),
-//!   floored at −80 dB; frames in the first 50 ms count double (transients).
+//!   floored at (peak − 50 dB) so inaudible differences do not count; frames in the first 50 ms count double (transients).
 //! - `d_env`: mean |dB| difference of RMS envelopes (window ≥ 2 periods and ≥ 10 ms, every 2 ms; floor −80 dB).
 //! - `d_loop`: mean |dB| difference of the loop's exact DFT magnitudes (bins up to Nyquist; 0 when unlooped).
 //! - `score = exp(−(d_spec/W_SPEC + d_env/W_ENV + d_loop/W_LOOP))`, 1 for identical waves.
@@ -15,6 +15,9 @@ pub const W_SPEC: f32 = 12.0;
 pub const W_ENV: f32 = 6.0;
 pub const W_LOOP: f32 = 12.0;
 const FLOOR: f32 = -80.0;
+/// Dynamic range compared by `d_spec` (below the peak) and by `d_loop` (`LOOP_RANGE`).
+pub const SPEC_RANGE: f32 = 50.0;
+pub const LOOP_RANGE: f32 = 60.0;
 /// Seconds of the played unroll that are compared.
 pub const PLAYED_SECS: f32 = 0.5;
 
@@ -62,7 +65,14 @@ pub fn mel_spec(x: &[f32], rate: f32, size: usize, bands: usize) -> (Vec<Vec<f32
             700.0 * (10f32.powf(m / 2595.0) - 1.0) * size as f32 / rate
         })
         .collect();
-    let mut frames = Vec::new();
+    // Bands at least 3 bins wide (fewer bins make the band level of a noise a random variable).
+    let edges: Vec<(f32, f32, f32)> = (0..bands)
+        .map(|b| {
+            let (lo, mid, hi) = (edges[b], edges[b + 1], edges[b + 2]);
+            if hi - lo >= 3.0 { (lo, mid, hi) } else { (mid - 1.5, mid, mid + 1.5) }
+        })
+        .collect();
+    let mut frames: Vec<Vec<f32>> = Vec::new();
     let mut starts = Vec::new();
     let mut start = 0usize;
     loop {
@@ -72,7 +82,7 @@ pub fn mel_spec(x: &[f32], rate: f32, size: usize, bands: usize) -> (Vec<Vec<f32
         let pow: Vec<f32> = buf[..=size / 2].iter().map(|c| c.norm_sqr() / (wsum * wsum / 4.0)).collect();
         let row: Vec<f32> = (0..bands)
             .map(|b| {
-                let (lo, mid, hi) = (edges[b], edges[b + 1], edges[b + 2]);
+                let (lo, mid, hi) = edges[b];
                 let mut acc = 0.0;
                 let mut wt = 0.0;
                 for (k, p) in pow.iter().enumerate() {
@@ -88,7 +98,7 @@ pub fn mel_spec(x: &[f32], rate: f32, size: usize, bands: usize) -> (Vec<Vec<f32
                     wt += w;
                 }
                 // Bands narrower than a bin take the nearest bin.
-                if wt == 0.0 { db(pow[(mid.round() as usize).min(size / 2)]) } else { db(acc / wt) }
+                if wt == 0.0 { pow[(mid.round() as usize).min(size / 2)] } else { acc / wt }
             })
             .collect();
         frames.push(row);
@@ -98,7 +108,15 @@ pub fn mel_spec(x: &[f32], rate: f32, size: usize, bands: usize) -> (Vec<Vec<f32
             break;
         }
     }
-    (frames, starts)
+    // Power smoothed over 5 frames (±2) before dB, so independent noises of the same colour compare equal.
+    let n = frames.len();
+    let smoothed: Vec<Vec<f32>> = (0..n)
+        .map(|k| {
+            let (a, b) = (k.saturating_sub(2), (k + 2).min(n - 1));
+            (0..bands).map(|j| db((a..=b).map(|q| frames[q][j]).sum::<f32>() / (b - a + 1) as f32)).collect()
+        })
+        .collect();
+    (smoothed, starts)
 }
 
 /// Smallest STFT size / envelope window: at least two periods of the wave's pitch, so frame values follow the
@@ -112,8 +130,13 @@ fn d_spec(a: &[f32], b: &[f32], rate: f32, min_win: usize) -> f32 {
     let mut total = 0.0;
     let small = min_win.next_power_of_two().clamp(128, 1024);
     for (size, bands) in [(small, 20usize), (512.max(small), 40), (2048, 64)] {
-        let (fa, sa) = mel_spec(a, rate, size, bands);
-        let (fb, _) = mel_spec(b, rate, size, bands);
+        let (mut fa, sa) = mel_spec(a, rate, size, bands);
+        let (mut fb, _) = mel_spec(b, rate, size, bands);
+        // Audibility floor: differences more than SPEC_RANGE dB below the louder spectrogram's peak do not count.
+        let top = fa.iter().chain(&fb).flatten().copied().fold(FLOOR, f32::max);
+        for v in fa.iter_mut().chain(fb.iter_mut()).flatten() {
+            *v = v.max(top - SPEC_RANGE);
+        }
         let (mut acc, mut wt) = (0.0f32, 0.0f32);
         for ((ra, rb), st) in fa.iter().zip(&fb).zip(&sa) {
             let w = if (*st as f32) < 0.05 * rate { 2.0 } else { 1.0 };
@@ -145,12 +168,41 @@ pub fn rms_env_win(x: &[f32], win: usize, hop: usize) -> Vec<f32> {
         .collect()
 }
 
-fn loop_db(x: &[f32]) -> Vec<f32> {
+fn loop_power(x: &[f32]) -> Vec<f32> {
     let l = x.len();
     let fft = FftPlanner::<f32>::new().plan_fft_forward(l);
     let mut buf: Vec<Complex32> = x.iter().map(|v| Complex32::new(*v, 0.0)).collect();
     fft.process(&mut buf);
-    buf[..=l / 2].iter().map(|c| db(c.norm_sqr() * 4.0 / (l * l) as f32)).collect()
+    buf[..=l / 2].iter().map(|c| c.norm_sqr() * 4.0 / (l * l) as f32).collect()
+}
+
+/// Mean |dB| difference of the two loops' spectra, compared per harmonic cluster (bins within ±m/2 of `k·m`, m =
+/// periods per loop) when pitched, per third-octave band otherwise; DC excluded. A short loop (m = 1) is compared
+/// bin by bin; a long ensemble loop by the energy around each harmonic, not by its exact bins.
+pub fn loop_distance(a: &[f32], b: &[f32], periods: Option<usize>) -> f32 {
+    let (pa, pb) = (loop_power(a), loop_power(b));
+    let n = pa.len() - 1;
+    let groups: Vec<(usize, usize)> = match periods {
+        Some(m) if m >= 1 && m <= n => {
+            let w = m / 2;
+            (1..=n / m).map(|k| ((k * m).saturating_sub(w).max(1), (k * m + w).min(n))).collect()
+        }
+        _ => {
+            let mut g = Vec::new();
+            let mut lo = 1usize;
+            while lo <= n {
+                let hi = ((lo as f32 * 1.26).ceil() as usize).max(lo).min(n);
+                g.push((lo, hi));
+                lo = hi + 1;
+            }
+            g
+        }
+    };
+    let la: Vec<f32> = groups.iter().map(|&(lo, hi)| db(pa[lo..=hi].iter().sum())).collect();
+    let lb: Vec<f32> = groups.iter().map(|&(lo, hi)| db(pb[lo..=hi].iter().sum())).collect();
+    let top = la.iter().chain(&lb).copied().fold(FLOOR, f32::max);
+    let d: f32 = la.iter().zip(&lb).map(|(x, y)| (x.max(top - LOOP_RANGE) - y.max(top - LOOP_RANGE)).abs()).sum();
+    d / groups.len().max(1) as f32
 }
 
 /// Fundamental by normalised autocorrelation (20 Hz–2 kHz) over up to 2048 samples from `from`; `None` when the
@@ -202,12 +254,10 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     let frame = (0.002 * rate) as usize;
     let (ea, eb) = (rms_env_win(&a, win, frame), rms_env_win(&b, win, frame));
     let de = ea.iter().zip(&eb).map(|(x, y)| (x - y).abs()).sum::<f32>() / ea.len().max(1) as f32;
+    let from = loop_of(m).map_or(0, |(s, _)| s);
+    let (fa, fb) = (pitch(&a, from, rate), pitch(&b, from, rate));
     let dl = match loop_of(m) {
-        Some((s, l)) if l >= 4 => {
-            let (la, lb) = (loop_db(&orig[s..s + l]), loop_db(&synth[s..s + l]));
-            // DC excluded: an offset in a tiny loop would dominate the mean.
-            la.iter().zip(&lb).skip(1).map(|(x, y)| (x - y).abs()).sum::<f32>() / (la.len() - 1).max(1) as f32
-        }
+        Some((s, l)) if l >= 4 => loop_distance(&orig[s..s + l], &synth[s..s + l], fa.map(|f| ((l as f32 * f / rate).round() as usize).max(1))),
         _ => 0.0,
     };
     let peak = synth.iter().fold(0.0f32, |p, v| p.max(v.abs()));
@@ -233,8 +283,6 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     }) {
         flags.push("env_off");
     }
-    let from = loop_of(m).map_or(0, |(s, _)| s);
-    let (fa, fb) = (pitch(&a, from, rate), pitch(&b, from, rate));
     if let (Some(x), Some(y)) = (fa, fb) {
         if (1200.0 * (y / x).log2()).abs() > 5.0 {
             flags.push("pitch_off");
@@ -295,6 +343,25 @@ mod tests {
         assert!(s.flags.contains(&"pitch_off"), "{:?} {:?} {:?}", s.flags, s.f0_orig, s.f0_gen);
         let s2 = score(&x, &tone(8000, 220.0 * 2f32.powf(2.0 / 1200.0), 0.5), &m);
         assert!(!s2.flags.contains(&"pitch_off"));
+    }
+
+    /// Two independent noises with the same colour and envelope must compare as (nearly) equal.
+    #[test]
+    fn independent_noises_compare_equal() {
+        let noise = |seed: u64| {
+            let mut r = seed;
+            (0..11025)
+                .map(|i| {
+                    r ^= r << 13;
+                    r ^= r >> 7;
+                    r ^= r << 17;
+                    ((r >> 11) as f32 / (1u64 << 53) as f32 - 0.5) * (-(i as f32) / 3000.0).exp()
+                })
+                .collect::<Vec<f32>>()
+        };
+        let m = meta(11025, None);
+        let s = score(&noise(1), &noise(2), &m);
+        assert!(s.d_spec < 1.5, "d_spec {}", s.d_spec);
     }
 
     #[test]
