@@ -130,4 +130,21 @@ GM_DLS=~/Downloads/64k-tools/gmdls/gm.dls cargo run -p gmfit -- extract   # asse
 cargo run -p gmfit -- placeholder                                          # files for waves without one
 cargo test -p gmgen --features std                                         # budget, sanity, periodic loops, determinism
 GM_DLS=… cargo test -p gmgen --features std                                # + structure equals the Windows bank
+GM_DLS=… cargo run --release -p gmfit -- render 289                       # build/gm/289/{orig,gen}.wav, sheet.png, report.json
+GM_DLS=… cargo run --release -p gmfit -- sweep 289 0.d 0.1,0.3,1          # scored variants + sweep.png
+GM_DLS=… cargo run --release -p gmfit -- report --check                   # build/gm/report.md + bank.png; regression gate
 ```
+
+## Score (`crates/gmfit/src/score.rs`, design D6)
+
+Both waves are "played": the attack, then the loop repeated to 0.5 s.
+
+| Component | Measures |
+|---|---|
+| `d_spec` | mean dB difference of log-mel spectrograms (128/512/2048-point, floor −80 dB, first 50 ms weighted double) |
+| `d_env` | mean dB difference of 2 ms RMS frames |
+| `d_loop` | mean dB difference of the loop's exact DFT bins |
+
+`score = exp(−(d_spec/12 + d_env/6 + d_loop/12))`. Tiers: A ≥ 0.95, B ≥ 0.85, C below that. Flags: `silent`,
+`clipped`, `nan`, `env_off` (10 ms span > 6 dB off where the original is above −40 dB), `pitch_off` (autocorrelation
+f0 > 5 cents off, pitched waves only) and `loop_click`.

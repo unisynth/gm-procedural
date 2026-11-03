@@ -57,17 +57,17 @@ skip when `GM_DLS` is unset.
 
 ## 4. Scoring, render and report
 
-- [ ] 4.1 Implement the score in `gmfit` (D6): the "played" unroll of the loop, multi-resolution log-mel `d_spec`,
+- [x] 4.1 Implement the score in `gmfit` (D6): the "played" unroll of the loop, multi-resolution log-mel `d_spec`,
   `d_env`, `d_loop`, and the flags.
   - Tests: an original scored against itself gives 1.0; silence scores below 0.1; a 10-cent detune sets `pitch_off`;
     a forced wrap step sets `loop_click`.
-- [ ] 4.2 Add `gmfit render <wave>`, which writes `orig.wav`, `gen.wav`, `sheet.png` (waveforms, both spectrograms,
+- [x] 4.2 Add `gmfit render <wave>`, which writes `orig.wav`, `gen.wav`, `sheet.png` (waveforms, both spectrograms,
   difference) and the JSON report with the score with and without correction. Exit codes 0 / 2, and non-zero without
   `GM_DLS`.
   - Verify: `gmfit render 289` produces all four artefacts, and the PNG opens.
-- [ ] 4.3 Add `gmfit sweep <wave> <param> <values>`: one contact-sheet row per variant, no files changed.
+- [x] 4.3 Add `gmfit sweep <wave> <param> <values>`: one contact-sheet row per variant, no files changed.
   - Verify: a 5-value sweep reports 5 rows and `git status` is clean.
-- [ ] 4.4 Add `gmfit report [--check]`: scores every wave, writes `build/gm/report.md` grouped by GM family with
+- [x] 4.4 Add `gmfit report [--check]`: scores every wave, writes `build/gm/report.md` grouped by GM family with
   tiers, and the bank-wide sheet. `--check` fails on a drop of more than 0.005 against `assets/gm/scores.json`.
   - Test: an artificially lowered wave makes `--check` exit non-zero, naming it.
 

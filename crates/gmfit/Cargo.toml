@@ -8,3 +8,5 @@ license.workspace = true
 dls = { path = "../dls", features = ["write"] }
 gmgen = { path = "../gmgen", features = ["std"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+rustfft = "6"
+png = "0.17"
