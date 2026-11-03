@@ -1,8 +1,8 @@
 //! Similarity score (design D6) of a generated wave against the original, on the "played" signals.
 //!
-//! - `d_spec`: mean |dB| difference of log-mel spectrograms at three STFT sizes (128/512/2048, hop size/4, Hann),
+//! - `d_spec`: mean |dB| difference of log-mel spectrograms at three STFT sizes (≥ 2 periods/512/2048, hop size/4, Hann),
 //!   floored at −80 dB; frames in the first 50 ms count double (transients).
-//! - `d_env`: mean |dB| difference of 2 ms RMS frames (floored at −80 dB).
+//! - `d_env`: mean |dB| difference of RMS envelopes (window ≥ 2 periods and ≥ 10 ms, every 2 ms; floor −80 dB).
 //! - `d_loop`: mean |dB| difference of the loop's exact DFT magnitudes (bins up to Nyquist; 0 when unlooped).
 //! - `score = exp(−(d_spec/W_SPEC + d_env/W_ENV + d_loop/W_LOOP))`, 1 for identical waves.
 use crate::audio::{loop_of, played};
@@ -101,9 +101,17 @@ pub fn mel_spec(x: &[f32], rate: f32, size: usize, bands: usize) -> (Vec<Vec<f32
     (frames, starts)
 }
 
-fn d_spec(a: &[f32], b: &[f32], rate: f32) -> f32 {
+/// Smallest STFT size / envelope window: at least two periods of the wave's pitch, so frame values follow the
+/// envelope and not the waveform phase.
+pub fn min_window(m: &WaveMeta) -> usize {
+    let f0 = 440.0 * 2f32.powf((m.unity as f32 - 69.0) / 12.0);
+    ((2.0 * m.rate as f32 / f0) as usize).max((0.01 * m.rate as f32) as usize)
+}
+
+fn d_spec(a: &[f32], b: &[f32], rate: f32, min_win: usize) -> f32 {
     let mut total = 0.0;
-    for (size, bands) in [(128usize, 20usize), (512, 40), (2048, 64)] {
+    let small = min_win.next_power_of_two().clamp(128, 1024);
+    for (size, bands) in [(small, 20usize), (512.max(small), 40), (2048, 64)] {
         let (fa, sa) = mel_spec(a, rate, size, bands);
         let (fb, _) = mel_spec(b, rate, size, bands);
         let (mut acc, mut wt) = (0.0f32, 0.0f32);
@@ -120,6 +128,21 @@ fn d_spec(a: &[f32], b: &[f32], rate: f32) -> f32 {
 
 pub fn rms_env(x: &[f32], frame: usize) -> Vec<f32> {
     x.chunks(frame).map(|c| db(c.iter().map(|v| v * v).sum::<f32>() / c.len() as f32)).collect()
+}
+
+/// RMS (dB) over centred windows of `win` samples, every `hop` samples.
+pub fn rms_env_win(x: &[f32], win: usize, hop: usize) -> Vec<f32> {
+    let mut sq = vec![0.0f64; x.len() + 1];
+    for (i, v) in x.iter().enumerate() {
+        sq[i + 1] = sq[i] + (*v as f64) * (*v as f64);
+    }
+    (0..x.len().div_ceil(hop))
+        .map(|k| {
+            let c = k * hop;
+            let (a, b) = (c.saturating_sub(win / 2), (c + win / 2).min(x.len()).max(c.saturating_sub(win / 2) + 1));
+            db(((sq[b] - sq[a]) / (b - a) as f64) as f32)
+        })
+        .collect()
 }
 
 fn loop_db(x: &[f32]) -> Vec<f32> {
@@ -174,14 +197,16 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     if synth.iter().any(|v| !v.is_finite()) {
         return Score { score: 0.0, d_spec: 99.0, d_env: 99.0, d_loop: 99.0, flags: vec!["nan"], f0_orig: None, f0_gen: None };
     }
-    let ds = d_spec(&a, &b, rate);
+    let win = min_window(m);
+    let ds = d_spec(&a, &b, rate, win);
     let frame = (0.002 * rate) as usize;
-    let (ea, eb) = (rms_env(&a, frame), rms_env(&b, frame));
+    let (ea, eb) = (rms_env_win(&a, win, frame), rms_env_win(&b, win, frame));
     let de = ea.iter().zip(&eb).map(|(x, y)| (x - y).abs()).sum::<f32>() / ea.len().max(1) as f32;
     let dl = match loop_of(m) {
         Some((s, l)) if l >= 4 => {
             let (la, lb) = (loop_db(&orig[s..s + l]), loop_db(&synth[s..s + l]));
-            la.iter().zip(&lb).map(|(x, y)| (x - y).abs()).sum::<f32>() / la.len() as f32
+            // DC excluded: an offset in a tiny loop would dominate the mean.
+            la.iter().zip(&lb).skip(1).map(|(x, y)| (x - y).abs()).sum::<f32>() / (la.len() - 1).max(1) as f32
         }
         _ => 0.0,
     };
@@ -189,11 +214,15 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     if peak < 1e-3 {
         flags.push("silent");
     }
-    let mut run = 0;
-    if synth.iter().any(|v| {
-        run = if v.abs() >= 32767.0 / 32768.0 { run + 1 } else { 0 };
-        run > 4
-    }) {
+    let clips = |x: &[f32]| {
+        let mut run = 0;
+        x.iter().any(|v| {
+            run = if v.abs() >= 32767.0 / 32768.0 { run + 1 } else { 0 };
+            run > 4
+        })
+    };
+    // Only when the original does not clip there itself.
+    if clips(synth) && !clips(orig) {
         flags.push("clipped");
     }
     // Envelope: any 10 ms span (5 frames) off by more than 6 dB where the original is above −40 dB.

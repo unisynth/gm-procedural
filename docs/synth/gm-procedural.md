@@ -51,7 +51,7 @@ index, so full builds, partial builds and `gmfit` all render a wave identically.
 **Harmonic correction** (`correct.rs`): dB gains at harmonics 1..C of f0, interpolated linearly in harmonic
 number, with 0 dB beyond the table (fading over one harmonic).
 - Loop: DFT, gain per bin, inverse DFT. The result is exact and stays periodic.
-- Attack: a 129-tap linear-phase FIR through the same curve.
+- Attack: a linear-phase FIR through the same curve, spanning at least 4 periods (129–2049 taps).
 
 **Determinism.** `math.rs` provides `sin_cycles`, `exp2`, `log2`, `db`, `sqrt`, `floor` and an xorshift RNG. It uses
 only basic IEEE operations. `clippy.toml` bans `f32` transcendental functions and `mul_add` in the crate.
@@ -141,10 +141,45 @@ Both waves are "played": the attack, then the loop repeated to 0.5 s.
 
 | Component | Measures |
 |---|---|
-| `d_spec` | mean dB difference of log-mel spectrograms (128/512/2048-point, floor −80 dB, first 50 ms weighted double) |
-| `d_env` | mean dB difference of 2 ms RMS frames |
-| `d_loop` | mean dB difference of the loop's exact DFT bins |
+| `d_spec` | mean dB difference of log-mel spectrograms (≥ 2 periods/512/2048-point, floor −80 dB, first 50 ms weighted double) |
+| `d_env` | mean dB difference of RMS envelopes (window ≥ 2 periods and ≥ 10 ms, every 2 ms) |
+| `d_loop` | mean dB difference of the loop's exact DFT bins (DC excluded) |
 
 `score = exp(−(d_spec/12 + d_env/6 + d_loop/12))`. Tiers: A ≥ 0.95, B ≥ 0.85, C below that. Flags: `silent`,
 `clipped`, `nan`, `env_off` (10 ms span > 6 dB off where the original is above −40 dB), `pitch_off` (autocorrelation
 f0 > 5 cents off, pitched waves only) and `loop_click`.
+
+## Analysis and fitting (`crates/gmfit`)
+
+**Priors** (`priors.rs`): each GM program and drum key maps to preferred families, best first. `analyze` takes the
+first implemented one. The table also holds the physical starting values: mode ratios, 808 oscillators, SATB
+vowels, Hammond footages, piano B, vibrato and scoop.
+
+**`gmfit analyze <w> [--force] [-o f]`** (`analyze.rs`) overwrites only placeholders unless `--force` is given.
+- Pitch: `m = round(L·f0/rate)` periods per loop, so the wave pitch is exactly `m·rate/L`.
+- Sustain `additive`:
+  - The harmonic table is the cluster energy within ±m/2 bins of `k·m`.
+  - Two strong peaks in a cluster give `unison` 2 and `detune`.
+  - Peak positions give `inharm` when the prior is inharmonic.
+  - Phases of the first 32 harmonics are converted to the generator's convention.
+  - `tail` −48 dB/oct.
+- Envelope: attack = rise to 70 % of the RMS peak, hold up to the peak, decay to the loop level.
+- The level of each layer is calibrated by rendering it alone and matching RMS.
+- A periodic `noise` layer models the inter-harmonic residual when it is above −25 dB.
+- Percussive priors add an `attack` layer (`drum`, `metal` or `noise`).
+- Unlooped waves get one `whole` layer from the prior (plus noise for snares).
+
+**`gmfit fit <w> [--iters 40] [--seed 1] [--vars 0.d,gain_db]`** (`fit.rs`, `cmaes.rs`):
+- Full-covariance CMA-ES over the explicit scalars plus `gain_db`, with populations scored in parallel.
+- Then 3 analytic passes over the sustain harmonic table.
+- The result is written only if it beats the committed score. `scores.json` is updated and `placeholder` cleared.
+
+**`gmfit correct <w>`**: the analytic harmonic correction `20·log10(|orig_k| / |model_k|)` at loop bins `k·m`
+(2048-point spectrum for unlooped waves), clamped to ±24 dB. Entries under 0.5 dB, or 80 dB below the strongest
+harmonic, become 0. The table is limited by the remaining budget, and kept only if better.
+
+| Measured (pilot preparation) | Score |
+|---|---|
+| Organ 1 wave 150, `analyze` only | 0.994 |
+| Organ wave 151 / 6, `analyze` only | 0.93 / 0.85 |
+| Detuned Organ wave 121: analyze → fit 40 iterations (2 s) | 0.41 → 0.47 |

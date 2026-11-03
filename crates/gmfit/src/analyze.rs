@@ -1,0 +1,332 @@
+//! `gmfit analyze`: initial parameters from the original wave and the GM priors.
+//!
+//! - Pitch: periods in the loop `m = round(L·f0/rate)`, so the wave pitch is exactly `m·rate/L` and harmonic `k`
+//!   sits on loop bin `k·m` (the generator snaps partials to the same grid).
+//! - Sustain (looped): an `additive` layer whose harmonic table is the loop DFT at bins `k·m` (stiff-string B from
+//!   the peak positions when the prior is inharmonic), plus a periodic `noise` layer for the energy between the
+//!   harmonics when that is above −25 dB. The attack envelope comes from the 2 ms RMS curve against the loop RMS.
+//! - Attack/whole: `drum`, `metal` or `noise` from the prior (pitch glide, decay, spectral centroid, 8 log bands),
+//!   each layer's level calibrated by rendering it alone and matching RMS.
+use crate::audio::loop_of;
+use crate::priors::{self, Kind, Prior};
+use crate::score::{pitch, rms_env};
+use gmgen::params::{Layer, Params};
+use gmgen::params_json::WaveFile;
+use gmgen::render::WaveMeta;
+use gmgen::schema::{family, Region, MAX_NUMBERS};
+use rustfft::num_complex::Complex32;
+use rustfft::FftPlanner;
+
+/// Prior of the first instrument that uses wave `i` (standard kit preferred for drum waves).
+pub fn prior_for_wave(i: usize) -> Prior {
+    let bank = gmgen::bank::skeleton();
+    let mut best: Option<(u8, Prior)> = None;
+    for ins in &bank.instruments {
+        for r in ins.regions.iter().filter(|r| r.wave as usize == i) {
+            let (rank, p) = if ins.drums {
+                (if ins.program == 0 { 0 } else { 1 }, priors::for_drum_key(r.key_lo.min(127) as u8))
+            } else {
+                (if ins.bank_msb == 0 { 0 } else { 2 }, priors::for_program(ins.program))
+            };
+            if best.is_none_or(|(b, _)| rank < b) {
+                best = Some((rank, p));
+            }
+        }
+    }
+    best.map_or(priors::for_program(127), |b| b.1)
+}
+
+/// Loop DFT: magnitudes (amplitude units) and phases (radians, cosine reference) for bins 0..=L/2.
+fn dft(x: &[f32]) -> (Vec<f32>, Vec<f32>) {
+    let l = x.len();
+    let fft = FftPlanner::<f32>::new().plan_fft_forward(l);
+    let mut buf: Vec<Complex32> = x.iter().map(|v| Complex32::new(*v, 0.0)).collect();
+    fft.process(&mut buf);
+    (buf[..=l / 2].iter().map(|c| 2.0 * c.norm() / l as f32).collect(), buf[..=l / 2].iter().map(|c| c.arg()).collect())
+}
+
+/// Mean power spectrum (Hann, 2048) of `x`, bins 0..=1024.
+fn avg_power(x: &[f32]) -> Vec<f32> {
+    let n = 2048;
+    let fft = FftPlanner::<f32>::new().plan_fft_forward(n);
+    let win: Vec<f32> = (0..n).map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / n as f32).cos()).collect();
+    let mut acc = vec![0.0f32; n / 2 + 1];
+    let mut frames = 0;
+    let mut start = 0;
+    loop {
+        let mut buf: Vec<Complex32> = (0..n).map(|i| Complex32::new(x.get(start + i).copied().unwrap_or(0.0) * win[i], 0.0)).collect();
+        fft.process(&mut buf);
+        for (a, c) in acc.iter_mut().zip(&buf) {
+            *a += c.norm_sqr();
+        }
+        frames += 1;
+        start += n / 2;
+        if start >= x.len() {
+            break;
+        }
+    }
+    acc.iter().map(|a| a / frames as f32).collect()
+}
+
+/// 8 log-spaced bands `[centre, Q, gain dB]` from a power spectrum (bin width `rate / (2·(len−1))`).
+fn bands(power: &[f32], rate: f32) -> Vec<f32> {
+    let nb = power.len() - 1;
+    let hz = |b: usize| b as f32 * rate / (2.0 * nb as f32);
+    let (lo, hi) = (120.0f32, rate * 0.45);
+    let edges: Vec<f32> = (0..=8).map(|k| lo * (hi / lo).powf(k as f32 / 8.0)).collect();
+    let mut out = Vec::new();
+    let mut gains = Vec::new();
+    for k in 0..8 {
+        let e: f32 = (0..=nb).filter(|&b| hz(b) >= edges[k] && hz(b) < edges[k + 1]).map(|b| power[b]).sum::<f32>()
+            / (edges[k + 1] - edges[k]);
+        gains.push(10.0 * e.max(1e-20).log10());
+    }
+    let top = gains.iter().copied().fold(f32::MIN, f32::max);
+    for k in 0..8 {
+        let c = (edges[k] * edges[k + 1]).sqrt();
+        out.extend([c, 1.8, (gains[k] - top).max(-60.0)]);
+    }
+    out
+}
+
+fn rms(x: &[f32]) -> f32 {
+    (x.iter().map(|v| v * v).sum::<f32>() / x.len().max(1) as f32).sqrt()
+}
+
+/// Scales layer `k` so that, rendered alone, its RMS over `range` matches `target`.
+fn calibrate(i: usize, p: &mut Params, k: usize, target: f32, range: std::ops::Range<usize>) {
+    let mut solo = p.clone();
+    solo.layers = vec![p.layers[k].clone()];
+    let x = gmgen::render_wave(i, &solo);
+    let r = rms(&x[range.start.min(x.len())..range.end.min(x.len())]);
+    if r > 1e-9 && target > 1e-9 {
+        let cur = p.layers[k].get("level_db");
+        p.layers[k].set("level_db", (cur + 20.0 * (target / r).log10()).clamp(-80.0, 24.0));
+    }
+}
+
+/// Envelope `a h d s` (relative to the level at `until`) from the 2 ms RMS curve over `[0, until)`.
+fn envelope(x: &[f32], rate: f32, until: usize, l: &mut Layer, reference: f32) {
+    let frame = (0.002 * rate) as usize;
+    let e: Vec<f32> = rms_env(&x[..until.min(x.len())], frame).iter().map(|d| 10f32.powf(d / 20.0) / reference.max(1e-9)).collect();
+    if e.is_empty() {
+        return;
+    }
+    let (kp, peak) = e.iter().enumerate().fold((0, 0.0f32), |b, (k, v)| if *v > b.1 { (k, *v) } else { b });
+    // Attack = rise to 70 % of the peak; the rest up to the peak is hold (organs start at full level at once).
+    let ka = e.iter().position(|v| *v >= 0.7 * peak).unwrap_or(kp);
+    let ft = frame as f32 / rate;
+    let a = (ka as f32 * ft).max(0.0005).min(until as f32 / rate * 0.9);
+    l.set("a", a);
+    l.set("h", ((kp as f32 + 0.5) * ft - a).clamp(0.0, until as f32 / rate * 0.9));
+    if peak > 1.05 {
+        let s = 1.0 / peak;
+        let target = s + (1.0 - s) / std::f32::consts::E;
+        let k1 = e.iter().skip(kp).position(|v| v / peak <= target).map_or(e.len() - kp, |k| k);
+        l.set("s", s.clamp(0.0, 1.0));
+        l.set("d", (k1 as f32 * frame as f32 / rate).max(0.002));
+    }
+}
+
+/// Initial parameters for wave `i`.
+pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
+    let prior = prior_for_wave(i);
+    let fam = priors::family(&prior);
+    let rate = m.rate as f32;
+    let mut p = Params::default();
+    let unity_hz = 440.0 * 2f32.powf((m.unity as f32 - 69.0) / 12.0);
+    match loop_of(m) {
+        Some((s, l)) => {
+            let lp = &orig[s..s + l];
+            let est = pitch(&crate::audio::played(orig, m, 0.3), s, rate).unwrap_or(unity_hz);
+            let per = ((l as f32 * est / rate).round() as usize).max(1);
+            let f0 = per as f32 * rate / l as f32;
+            p.wave[1] = (69.0 + 12.0 * (f0 / 440.0).log2()).clamp(0.0, 139.0);
+            p.wave_explicit[1] = true;
+            // Attack layer from the prior for percussive kinds.
+            let attack_family = match prior.kind {
+                Kind::Drum | Kind::Snare => Some("drum"),
+                Kind::Metal(_) => Some("metal"),
+                Kind::Shaker | Kind::Noise => Some("noise"),
+                _ => None,
+            };
+            if let Some(af) = attack_family.filter(|_| s > (0.005 * rate) as usize) {
+                let mut a = attack_layer(af, &prior, orig, rate, Region::Attack, s);
+                a.set("level_db", -12.0);
+                p.layers.push(a);
+            }
+            // Sustain: harmonic table from the loop.
+            let (mag, phs) = dft(lp);
+            let mut sus = Layer::new(family("additive").unwrap(), Region::Sustain);
+            let budget = MAX_NUMBERS - 40;
+            let kmax = ((l / 2) / per).min(240).min(budget);
+            let mut harm = Vec::new();
+            let mut bs = Vec::new();
+            let w = if per >= 3 { per / 2 } else { 0 };
+            let cluster = |c: usize| c.saturating_sub(w)..=(c + w).min(l / 2);
+            // Detuned voices: two strong peaks around the low harmonics → unison 2 with their distance in cents.
+            let mut det = Vec::new();
+            for k in 1..=kmax.min(4) {
+                let c = k * per;
+                let mut peaks: Vec<(usize, f32)> = cluster(c)
+                    .filter(|&b| b > 0 && b < l / 2 && mag[b] >= mag[b - 1] && mag[b] >= mag[b + 1])
+                    .map(|b| (b, mag[b]))
+                    .collect();
+                peaks.sort_by(|a, b| b.1.total_cmp(&a.1));
+                if peaks.len() >= 2 && peaks[1].1 > 0.5 * peaks[0].1 && peaks[0].1 > 1e-3 {
+                    let (b1, b2) = (peaks[0].0.min(peaks[1].0) as f32, peaks[0].0.max(peaks[1].0) as f32);
+                    det.push(1200.0 * (b2 / b1).log2());
+                }
+            }
+            for k in 1..=kmax {
+                let c = k * per;
+                // Energy of the whole cluster (unison / beating partials land beside k·per).
+                let e: f32 = cluster(c).map(|b| mag[b] * mag[b]).sum();
+                let (bin, a) = if prior.inharm > 0.0 && per >= 3 {
+                    let pk = cluster(c).map(|b| (b, mag[b])).fold((c, 0.0f32), |x, y| if y.1 > x.1 { y } else { x });
+                    (pk.0, e.sqrt())
+                } else {
+                    (c, e.sqrt())
+                };
+                harm.push(20.0 * a.max(1e-6).log10());
+                if prior.inharm > 0.0 && k >= 3 && a > 1e-4 {
+                    let r = bin as f32 / c as f32;
+                    let kf = k as f32;
+                    let b = (r * r - 1.0) / (kf * kf - r * r);
+                    if b > 0.0 && b < 0.02 {
+                        bs.push(b);
+                    }
+                }
+            }
+            if det.len() >= 2 {
+                det.sort_by(f32::total_cmp);
+                sus.set("unison", 2.0);
+                sus.set("detune", det[det.len() / 2].clamp(0.0, 50.0));
+            }
+            while harm.len() > 1 && *harm.last().unwrap() < -90.0 {
+                harm.pop();
+            }
+            if !bs.is_empty() {
+                bs.sort_by(f32::total_cmp);
+                sus.set("inharm", bs[bs.len() / 2]);
+            }
+            if prior.vib_cents > 0.0 {
+                sus.set("vib_rate", prior.vib_rate);
+                sus.set("vib_cents", 0.0);
+            }
+            // Phases of the first 32 harmonics, in the generator's convention: partial k is
+            // sin(2π(n_k·t/L + ph)), and the loop DFT phase φ refers to cos at t = s, so
+            // ph = (φ + π/2)/2π − n_k·s/L (mod 1), with n_k = k·per.
+            if prior.inharm == 0.0 && harm.len() + 32 <= budget {
+                sus.tables[1] = (1..=harm.len().min(32))
+                    .map(|k| {
+                        let ph = (phs[(k * per).min(l / 2)] + std::f32::consts::FRAC_PI_2) / std::f32::consts::TAU
+                            - ((k * per * s) % l) as f32 / l as f32;
+                        ph - ph.floor()
+                    })
+                    .collect();
+            }
+            sus.tables[0] = harm;
+            sus.set("tail", -48.0);
+            sus.set("level_db", 0.0);
+            let loop_rms = rms(lp);
+            envelope(orig, rate, s, &mut sus, loop_rms);
+            p.layers.push(sus);
+            // Level: the sustain layer alone must give the loop's harmonic RMS (the envelope is frozen there).
+            let harm_e: f32 = (1..=kmax).flat_map(|k| cluster(k * per)).map(|b| mag[b] * mag[b]).sum();
+            let harm_rms = (harm_e / 2.0).sqrt();
+            let k = p.layers.len() - 1;
+            calibrate(i, &mut p, k, harm_rms, s..s + l);
+            // Residual between harmonics → periodic noise.
+            let total_e: f32 = mag.iter().skip(1).map(|v| v * v).sum();
+            let resid = (total_e - harm_e).max(0.0);
+            if per >= 4 && resid > harm_e * 10f32.powf(-2.5) {
+                let mut pw: Vec<f32> = mag.iter().map(|v| v * v).collect();
+                for k in 1..=kmax {
+                    for b in cluster(k * per) {
+                        pw[b] = 0.0;
+                    }
+                }
+                let mut nz = Layer::new(family("noise").unwrap(), Region::Sustain);
+                nz.tables[0] = bands(&pw, rate);
+                let a = p.layers.last().unwrap().get("a");
+                nz.set("a", a);
+                nz.set("level_db", -20.0);
+                p.layers.push(nz);
+                let k = p.layers.len() - 1;
+                calibrate(i, &mut p, k, (resid / 2.0).sqrt(), s..s + l);
+            }
+            if let Some(k) = p.layers.iter().position(|x| x.region == Region::Attack) {
+                // Attack layer covers what the sustain layer misses in the first part.
+                let head = (0..s.min((0.03 * rate) as usize).max(1)).collect::<Vec<_>>();
+                let target = rms(&orig[head[0]..*head.last().unwrap() + 1]) * 0.5;
+                calibrate(i, &mut p, k, target, 0..head.len());
+            }
+        }
+        None => {
+            let f = if fam == "additive" { "noise" } else { fam };
+            let region = Region::Whole;
+            let mut l = attack_layer(f, &prior, orig, rate, region, orig.len());
+            l.set("level_db", -12.0);
+            p.layers.push(l);
+            let peak_win = (0.05 * rate) as usize;
+            let target = rms(&orig[..peak_win.min(orig.len())]);
+            calibrate(i, &mut p, 0, target, 0..peak_win.min(orig.len()));
+            if prior.kind == Kind::Snare {
+                let mut nz = attack_layer("noise", &prior, orig, rate, region, orig.len());
+                nz.set("level_db", -12.0);
+                p.layers.push(nz);
+                calibrate(i, &mut p, 1, target * 0.7, 0..peak_win.min(orig.len()));
+            }
+        }
+    }
+    let _ = p.validate();
+    WaveFile { wave: i as u32, params: p, placeholder: false, note: format!("analyze: prior {:?}", prior.kind).chars().take(80).collect() }
+}
+
+/// A transient layer of family `f` from the wave's onset (`until` = end of the analysed part).
+fn attack_layer(f: &str, prior: &Prior, x: &[f32], rate: f32, region: Region, until: usize) -> Layer {
+    let mut l = Layer::new(family(f).unwrap(), region);
+    let seg = &x[..until.min(x.len())];
+    let frame = (0.002 * rate) as usize;
+    let env = rms_env(seg, frame);
+    let (kp, peak) = env.iter().enumerate().fold((0, f32::MIN), |b, (k, v)| if *v > b.1 { (k, *v) } else { b });
+    // 1/e (−8.7 dB) decay time after the peak.
+    let k1 = env.iter().skip(kp).position(|v| *v < peak - 8.7).unwrap_or(env.len().saturating_sub(kp));
+    let decay = (k1 as f32 * frame as f32 / rate).clamp(0.003, 5.0);
+    match f {
+        "drum" => {
+            let late = pitch(seg, (seg.len() / 3).min(seg.len()), rate).or_else(|| pitch(seg, 0, rate)).unwrap_or(60.0);
+            let early = pitch(&seg[..seg.len().min((0.03 * rate) as usize)], 0, rate).unwrap_or(late * 1.5);
+            l.set("freq", late.clamp(20.0, 2000.0));
+            l.set("ratio", (early / late).clamp(1.0, 8.0));
+            l.set("decay", decay.clamp(0.005, 10.0));
+            if prior.kind == Kind::Snare {
+                l.set("click_db", -20.0);
+            }
+        }
+        "metal" => {
+            let pw = avg_power(seg);
+            let nb = pw.len() - 1;
+            let (num, den) = pw.iter().enumerate().fold((0.0f32, 0.0f32), |(a, b), (k, v)| (a + k as f32 * v, b + v));
+            let centroid = (num / den.max(1e-20)) * rate / (2.0 * nb as f32);
+            l.set("bp", centroid.clamp(500.0, 15000.0));
+            l.set("hp", (centroid * 0.5).clamp(200.0, 12000.0));
+            l.set("q", 1.0);
+            l.set("d", decay.clamp(0.002, 10.0));
+            if let Kind::Metal(f) = prior.kind {
+                l.set("base", f[0]);
+                l.tables[0] = f.iter().map(|x| x / f[0]).collect();
+            }
+        }
+        _ => {
+            l.tables[0] = bands(&avg_power(seg), rate);
+            l.set("a", ((kp as f32 + 0.5) * frame as f32 / rate).clamp(0.0, 2.0));
+            l.set("d", decay.clamp(0.001, 30.0));
+            if region != Region::Sustain {
+                l.set("s", 0.0);
+            }
+        }
+    }
+    l
+}

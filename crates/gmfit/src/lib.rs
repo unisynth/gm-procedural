@@ -41,7 +41,11 @@ pub fn placeholder(wave: u32, m: &gmgen::render::WaveMeta) -> gmgen::params_json
     gmgen::params_json::WaveFile { wave, params: p, placeholder: true, note: String::new() }
 }
 
+pub mod analyze;
 pub mod audio;
+pub mod cmaes;
+pub mod fit;
+pub mod priors;
 pub mod score;
 pub mod sheet;
 
@@ -210,4 +214,26 @@ pub fn regressions(committed: &serde_json::Map<String, Value>, new: &serde_json:
         .collect();
     out.sort();
     out.into_iter().map(|x| x.1).collect()
+}
+
+/// Writes `wf` for wave `i` when `score` beats the committed score (scores.json, else the current file's), and
+/// records the new score. Returns whether it was written.
+pub fn keep_if_better(orig: &Orig, i: usize, mut wf: WaveFile, score: f32) -> Result<bool, String> {
+    let mut scores = load_scores();
+    let old = match scores.get(&i.to_string()).and_then(|v| v["score"].as_f64()) {
+        Some(s) => s as f32,
+        None => load_wave(i).map(|w| evaluate(&orig.wave(i), i, &w.params).0.score).unwrap_or(0.0),
+    };
+    if score <= old {
+        return Ok(false);
+    }
+    wf.placeholder = false;
+    wf.params.validate()?;
+    std::fs::write(wave_path(i), gmgen::params_json::to_json(&wf)).map_err(|e| e.to_string())?;
+    // Re-read: the file rounds numbers to 5 digits; record the score of what is on disk.
+    let on_disk = load_wave(i)?;
+    let s = evaluate(&orig.wave(i), i, &on_disk.params).0;
+    scores.insert(i.to_string(), s.json());
+    save_scores(&scores)?;
+    Ok(true)
 }

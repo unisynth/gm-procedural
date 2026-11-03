@@ -4,6 +4,10 @@
 //! gmfit placeholder                             write a placeholder parameter file for every wave without one
 //! gmfit render <wave> [-p file.json]            A/B wav + sheet.png + report.json in build/gm/NNN, JSON on stdout
 //! gmfit sweep <wave> <param> <v1,v2,..>         one scored, rendered variant per value (files unchanged)
+//! gmfit analyze <wave> [--force] [-o f]         initial parameters from the original + priors (placeholders only,
+//!                                               unless --force; -o writes elsewhere)
+//! gmfit fit <wave> [--iters N] [--seed S] [--vars 0.d,gain_db]   CMA-ES + harmonic refinement, kept if better
+//! gmfit correct <wave>                          analytic harmonic correction, kept if better
 //! gmfit report [--check] [--baseline]           score every wave → build/gm/report.md; --check vs scores.json
 //!
 //! Exit: 0 ok, 2 flags raised (render) / regression (report --check), 1 error.
@@ -116,8 +120,57 @@ fn main() {
                 .unwrap_or_else(|e| die(e));
             println!("{}", serde_json::to_string_pretty(&json!({"wave": i, "param": path, "rows": rows, "sheet": dir.join("sweep.png").display().to_string()})).unwrap());
         }
+        Some("analyze") => {
+            let i = wave_arg(&args);
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let m = gmgen::bank::meta(i).unwrap();
+            let o = orig.wave(i);
+            let wf = gmfit::analyze::analyze(i, &o, &m);
+            let s = gmfit::evaluate(&o, i, &wf.params).0;
+            let text = gmgen::params_json::to_json(&wf);
+            let target = opt("-o").map(std::path::PathBuf::from);
+            let current = gmfit::load_wave(i).ok();
+            let write_to = match target {
+                Some(t) => Some(t),
+                None if flag("--force") || current.as_ref().is_none_or(|w| w.placeholder) => Some(gmfit::wave_path(i)),
+                None => None,
+            };
+            if let Some(t) = &write_to {
+                std::fs::write(t, &text).unwrap_or_else(|e| die(e));
+                if *t == gmfit::wave_path(i) {
+                    let mut sc = gmfit::load_scores();
+                    sc.insert(i.to_string(), s.json());
+                    gmfit::save_scores(&sc).unwrap_or_else(|e| die(e));
+                }
+            }
+            println!("{}", json!({"wave": i, "written": write_to.map(|p| p.display().to_string()), "score": score::r4(s.score), "flags": s.flags}));
+        }
+        Some("fit") => {
+            let i = wave_arg(&args);
+            let iters: usize = opt("--iters").and_then(|v| v.parse().ok()).unwrap_or(40);
+            let seed: u64 = opt("--seed").and_then(|v| v.parse().ok()).unwrap_or(1);
+            let only: Option<Vec<String>> = opt("--vars").map(|v| v.split(',').map(String::from).collect());
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let wf = gmfit::load_wave(i).unwrap_or_else(|e| die(e));
+            let o = orig.wave(i);
+            let before = gmfit::fit::score_of(&o, i, &wf.params);
+            let (p, after) = gmfit::fit::fit(&o, i, &wf.params, iters, seed, only.as_deref());
+            let kept = gmfit::keep_if_better(&orig, i, gmgen::params_json::WaveFile { params: p, ..wf }, after).unwrap_or_else(|e| die(e));
+            println!("{}", json!({"wave": i, "before": score::r4(before), "after": score::r4(after), "written": kept}));
+        }
+        Some("correct") => {
+            let i = wave_arg(&args);
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let wf = gmfit::load_wave(i).unwrap_or_else(|e| die(e));
+            let o = orig.wave(i);
+            let before = gmfit::fit::score_of(&o, i, &wf.params);
+            let (p, after) = gmfit::fit::correct(&o, i, &wf.params);
+            let n = p.correction.len();
+            let kept = gmfit::keep_if_better(&orig, i, gmgen::params_json::WaveFile { params: p, ..wf }, after).unwrap_or_else(|e| die(e));
+            println!("{}", json!({"wave": i, "before": score::r4(before), "after": score::r4(after), "entries": n, "written": kept}));
+        }
         Some("report") => report(flag("--check"), flag("--baseline")),
-        _ => die("usage: gmfit extract | placeholder | render <wave> [-p f] | sweep <wave> <param> <values> | report [--check] [--baseline]"),
+        _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | render <w> [-p f] | sweep <w> <param> <values> | report [--check] [--baseline]"),
     }
 }
 

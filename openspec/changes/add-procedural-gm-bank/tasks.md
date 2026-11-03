@@ -73,16 +73,16 @@ skip when `GM_DLS` is unset.
 
 ## 5. Analysis and fitting
 
-- [ ] 5.1 Add the analysis priors table `crates/gmfit/src/priors.rs` from `research/gm-procedural-instruments.md`:
+- [x] 5.1 Add the analysis priors table `crates/gmfit/src/priors.rs` from `research/gm-procedural-instruments.md`:
   mode-ratio sets, 808 hat and cowbell oscillators, SATB vowel formants, Hammond footages, piano B by register,
   vibrato and scoop defaults. Map each GM program and drum key to its families and priors.
   - Test: every GM program 0–127 and every drum key used by the 9 kits maps to at least one family.
-- [ ] 5.2 Add `gmfit analyze <wave>`, which writes the initial parameters: f0, a harmonic table from the loop DFT,
+- [x] 5.2 Add `gmfit analyze <wave>`, which writes the initial parameters: f0, a harmonic table from the loop DFT,
   envelope breakpoints, noise bands, drum pitch sweep, and families and priors from 5.1.
   - Verify: the analysed `additive` init for a pure organ wave scores at least 0.9.
-- [ ] 5.3 Implement seeded CMA-ES (diagonal plus rank-μ) over normalised parameter ranges.
+- [x] 5.3 Implement seeded CMA-ES (full covariance plus rank-μ; the diagonal variant stalled on Rosenbrock) over normalised parameter ranges.
   - Tests: it converges on Rosenbrock and a sphere; the same seed gives identical results.
-- [ ] 5.4 Add `gmfit fit <wave> [--seed --iters]`, which writes only on improvement and updates `scores.json`. Add
+- [x] 5.4 Add `gmfit fit <wave> [--seed --iters]`, which writes only on improvement and updates `scores.json`. Add
   `gmfit correct <wave>`, the analytic correction (D4b) truncated to the remaining budget.
   - Tests: no write on regression; `correct` raises the score of a deliberately mistimbred `ks` fixture.
 

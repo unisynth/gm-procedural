@@ -112,9 +112,9 @@ for harmonics 1..C of the wave's f0. It is clamped to ±24 dB and absent by defa
   `10^(g/20)` (bins between harmonics get the interpolated gain), and take the inverse DFT. The result is exact and
   still periodic, so the wrap stays seamless.
 - **Attack `[0, s)` and unlooped waves:** the same points are interpolated (in dB, over log-frequency) into a
-  zero-phase linear-phase FIR (129 taps, windowed). The filter is applied with its delay compensated. The FIR spans
-  only 129 samples, so it also smooths the join into the loop at `s`, and the first loop period is the corrected
-  one.
+  linear-phase FIR (Hann-windowed) whose length spans at least 4 periods of f0 (129–2049 taps), so that neighbouring
+  harmonics get their own gains. *Measured:* a fixed 129-tap filter cannot resolve 65 Hz harmonics, and it lowered the
+  score. The filter is applied with its delay compensated.
 
 This lets a behavioural model (`ks`, `modal`, `subtractive`, `formant`) keep a small parameter set while the
 correction takes over the timbre detail that would otherwise need a large `additive` table. The order for the fit
@@ -143,8 +143,10 @@ The original and generated waves are both "played": the attack, then the loop un
 sustain counts in proportion to how it is heard. Components:
 - `d_spec`: mean absolute log-magnitude difference (dB, floored at −80 dB) over a mel-spaced band grid. STFT windows
   are 128, 512 and 2048 samples, and the transient frames carry extra weight.
-- `d_env`: mean dB difference of RMS taken over 2 ms frames.
-- `d_loop`: log-magnitude difference of the loop's DFT (exact bins at multiples of rate/L).
+- `d_env`: mean dB difference of RMS envelopes, with windows ≥ 2 periods of the unity pitch and ≥ 10 ms, every 2 ms.
+  *Measured:* 2 ms frames are shorter than a low note's period, so they tracked waveform phase rather than the
+  envelope. The smallest STFT is likewise ≥ 2 periods.
+- `d_loop`: log-magnitude difference of the loop's DFT (exact bins at multiples of rate/L; DC excluded).
 
 Combined score: `score = exp(-(d_spec/12 + d_env/6 + d_loop/12))`. It equals 1 for identical waves and falls toward 0
 for silence. The weights are recalibrated in the pilot (task group 5), and any change re-baselines `scores.json`.
@@ -166,11 +168,13 @@ Tiers for the report: A ≥ 0.95, B ≥ 0.85, C below that.
 - The family comes from the GM category of the instruments that use the wave (piano → `modal` + `additive`, guitar
   → `ks` + `additive`, drum-kit wave → `drum`/`noise`, and so on). The agent can override it per wave file.
 
-`gmfit fit` then runs CMA-ES over the free parameters, normalised to [0,1] by per-parameter ranges. It is our own
-deterministic implementation (diagonal covariance and rank-μ update, about 200 lines), seeded. It does not use the
-`cmaes` crate, which pulls in nalgebra and is not seeded deterministically. Harmonic amplitudes come out of the
-analysis already close, so they are tuned last, in a block-coordinate pass. The parameter file is written only on
-improvement (spec).
+`gmfit fit` then runs CMA-ES over the free parameters, normalised to [0,1] by per-parameter ranges (log mapping
+for wide positive ranges). It is our own deterministic, seeded implementation with **full covariance** (cyclic Jacobi
+eigendecomposition; n ≤ ~60). *Measured:* the separable (diagonal) variant first planned stalls on Rosenbrock, and fit
+parameters are coupled the same way (level, decay and tilt). It does not use the `cmaes` crate, which pulls in
+nalgebra and is not seeded deterministically. The harmonic table is refined afterwards analytically: 3 passes moving
+each entry by the loop's harmonic level error, each kept only if the score improves. The parameter file is written
+only on improvement (spec).
 - *Rejected: DDSP / gradient descent.* KS and modal generators are not differentiable in their current form, and a
   Python stack would split the runtime and fit code.
 

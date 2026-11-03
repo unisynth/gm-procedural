@@ -120,7 +120,7 @@
 "118": {"score":0.0842,"d_spec":8.3591,"d_env":7.6966,"d_loop":5.9464,"flags":["env_off"],"f0_orig":175.0004,"f0_gen":175.0},
 "119": {"score":0.1279,"d_spec":5.811,"d_env":6.518,"d_loop":5.8286,"flags":["env_off"],"f0_orig":700.0046,"f0_gen":700.0005},
 "120": {"score":0.0868,"d_spec":13.1035,"d_env":8.115,"d_loop":0.0,"flags":["env_off"],"f0_orig":null,"f0_gen":493.75},
-"121": {"score":0.1959,"d_spec":14.4349,"d_env":1.5859,"d_loop":1.9552,"flags":["env_off","pitch_off"],"f0_orig":740.2783,"f0_gen":1478.8695},
+"121": {"score":0.4739,"d_spec":3.0665,"d_env":2.0922,"d_loop":1.7107,"flags":["env_off","pitch_off"],"f0_orig":740.2783,"f0_gen":737.3487},
 "122": {"score":0.0919,"d_spec":10.7042,"d_env":5.5248,"d_loop":6.8904,"flags":["env_off"],"f0_orig":65.4303,"f0_gen":65.4303},
 "123": {"score":0.1247,"d_spec":8.8325,"d_env":4.3248,"d_loop":7.5038,"flags":["env_off"],"f0_orig":93.0384,"f0_gen":93.038},
 "124": {"score":0.0868,"d_spec":9.5783,"d_env":5.4056,"d_loop":8.9464,"flags":["env_off"],"f0_orig":123.8771,"f0_gen":123.8767},

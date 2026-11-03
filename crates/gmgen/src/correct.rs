@@ -2,12 +2,20 @@
 //! linearly in harmonic number between entries (0 dB beyond the table, fading over one harmonic).
 //! - Loop `[s, s+L)`: exact — DFT of the loop, per-bin gain, inverse DFT; still periodic, so the wrap stays clean.
 //!   Samples after the loop end continue the corrected loop.
-//! - Attack `[0, s)` (whole wave when unlooped): 129-tap linear-phase FIR through the same curve, delay-compensated.
+//! - Attack `[0, s)` (whole wave when unlooped): linear-phase FIR through the same curve, delay-compensated; its
+//!   length spans ≥ 4 periods of f0 (129…2049 taps) so neighbouring harmonics get their own gains.
 use crate::math::{cos_cycles, db, sin_cycles};
 use alloc::vec;
 use alloc::vec::Vec;
 
-const TAPS: usize = 129;
+const MIN_TAPS: usize = 129;
+const MAX_TAPS: usize = 2049;
+
+/// FIR length for a fundamental: odd, ≥ 4 periods.
+pub fn taps(f0: f32, rate: f32) -> usize {
+    let t = ((4.0 * rate / f0.max(1.0)) as usize).clamp(MIN_TAPS, MAX_TAPS);
+    t | 1
+}
 
 /// Gain (linear) at harmonic number `h` (≥ 0).
 pub fn gain_at(c: &[f32], h: f32) -> f32 {
@@ -77,10 +85,11 @@ pub fn apply(x: &mut [f32], lp: Option<(usize, usize)>, f0: f32, rate: f32, c: &
     let orig: Vec<f32> = x.to_vec();
     let attack_end = lp.map_or(x.len(), |(s, _)| s);
     // FIR by frequency sampling of the curve on N/2+1 points, Hann-windowed.
-    let m = TAPS / 2;
-    let nfreq = 256;
+    let ntaps = taps(f0, rate);
+    let m = ntaps / 2;
+    let nfreq = ntaps.next_power_of_two();
     let curve: Vec<f32> = (0..=nfreq).map(|k| gain_at(c, (k as f32 / (2 * nfreq) as f32) * rate / f0)).collect();
-    let h: Vec<f32> = (0..TAPS)
+    let h: Vec<f32> = (0..ntaps)
         .map(|n| {
             let t = n as f32 - m as f32;
             let mut acc = curve[0];
@@ -88,7 +97,7 @@ pub fn apply(x: &mut [f32], lp: Option<(usize, usize)>, f0: f32, rate: f32, c: &
                 let w = if k == nfreq { 1.0 } else { 2.0 };
                 acc += w * g * cos_cycles(k as f32 * t / (2 * nfreq) as f32);
             }
-            let win = 0.5 - 0.5 * cos_cycles(n as f32 / (TAPS - 1) as f32);
+            let win = 0.5 - 0.5 * cos_cycles(n as f32 / (ntaps - 1) as f32);
             acc / (2 * nfreq) as f32 * win
         })
         .collect();
