@@ -314,6 +314,35 @@ be wrong.
 Result: the kick's last 5 ms match (−45.8/−45.8 dB), kick 0.6996 → 0.7091, and snare 0.6769 → **0.7408** (its
 end fade was unreachable too). Hat unchanged.
 
+### D4k. Gap noise calibrated by periodicity (Strings 405, round 10)
+Feedback: "405 has shhhsss noise".
+
+The round-8 noise matched the mid-gap energy, but in the 3–6 kHz band it carried about 36 % of the band energy
+as unpitched noise. In the original most of that mid-gap energy is pitched smear: wide harmonic clusters, more
+energy 10–20 bins out than at the line.
+
+Per-band periodicity, the best normalised autocorrelation at one period ±4 % over 50 ms frames (1 = pitched):
+
+| band | original | round 8 | round 7 (no noise) | round 10 |
+|---|---|---|---|---|
+| 1.5–3 kHz | 0.93 | 0.89 | 0.96 | 0.92 |
+| 3–6 kHz | 0.80 | **0.56** | 0.90 | **0.81** |
+| 6–9.5 kHz | 0.45 | 0.44 | 0.73 | 0.61 |
+
+The fix: `gap_noise` keeps the energy-based start, but its 3 refinement passes now set each noise band so that
+the noise's aperiodic share, (1 − p_model) − (1 − p_model without noise), equals the original's. A band that
+needs none drops to −60 dB. The low-pass is still picked by score.
+
+Tried and rejected:
+- **An `additive` `skirt` table** (Gaussian grid components around each line, level fitted on the near profile)
+  fought the per-harmonic re-levelling: the lines dropped 10–25 dB and `d_loop` went 0.38 → 1.60. Removed.
+- **Open or high low-pass with the periodicity calibration:** the top band became hissy (0.26 / 0.35) and scored
+  0.66–0.74.
+
+The score drops 0.8122 → 0.7974. `d_loop` rises 0.38 → 0.59: the 10–10.8 kHz groups lose the noise above the
+generator's partial limit, and h19/h22 sit 3–5 dB low. The score does not hear the hiss, so the result was
+written and re-baselined on listening feedback. `measure.py` now has the periodicity check.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

@@ -207,6 +207,21 @@ wave (D4j).
 | snare 161 | 0.6769 | **0.7408** |
 | hat 83 | 0.7183 | 0.7191 |
 
+## Round 10: "405 has shhhsss noise"
+
+The noise layer alone carried 36 % of the 3–6 kHz energy. Around each harmonic, the original's upper harmonics
+are wide clusters (h7–11: +6 dB at ±5–10 bins vs the line), not lines over a floor. Mid-gap *energy* matched,
+but *periodicity* did not (3–6 kHz: original 0.80, round 8 0.56). Noise bands are now calibrated by periodicity:
+
+| band | original | round 8 | round 10 |
+|---|---|---|---|
+| 1.5–3 kHz | 0.93 | 0.89 | 0.92 |
+| 3–6 kHz | 0.80 | 0.56 | 0.81 |
+| 6–9.5 kHz | 0.45 | 0.44 | 0.61 |
+
+Score 0.812 → 0.797 (`d_loop`: 10–10.8 kHz groups and h19/h22). Accepted on listening. A `skirt` model of the
+wide clusters was tried and rejected (D4k).
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.

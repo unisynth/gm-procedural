@@ -242,7 +242,7 @@ result is kept only if better.
 | Piano 293 | 0.74 | 0.84 | 0.85 (stiff-string alternative 0.84) |
 | Fingered Bass 240 | 0.956 | 0.985 | 0.985 |
 
-Round 8: Strings with gap noise (`gap_noise`: periodic noise layer from the floor between the harmonics).
+Round 10: gap noise calibrated by per-band periodicity (no hiss). Round 8: Strings with gap noise (`gap_noise`: periodic noise layer from the floor between the harmonics).
 Round 7: Strings without buzz (`phase_seed`; scorer flag `buzz`). Round 6: Strings 0.815 (`side` rows, 512-number budget). Round 5: Strings 0.79 (per-harmonic `am` + `vib` tables). Round 4 under the A-weighted score with `d_onset`: kick 0.70 (from 0.41 with the drum noise layer), snare 0.68,
 hat 0.65, Bass 0.89, Strings 0.67 (loop vibrato + AM), Piano 0.75 (stiff string + stretched loop).
 

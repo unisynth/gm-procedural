@@ -77,6 +77,33 @@ for lo, hi in ((1500, 2500), (2500, 4000), (4000, 7000), (7000, min(10000, sr * 
 
 if not (pitched and looped):
     rows.append("buzz                      n/a (needs a pitched loop)")
+# Periodicity per band (pitched loops): best normalised autocorrelation at one period ±4 % over 50 ms frames.
+# 1 = pitched, ~0 = noise. Lower than the original = hiss ("shhh"); higher = too clean/synthetic (405 round 10).
+def periodicity(x, lo, hi):
+    X = np.fft.rfft(x)
+    ff = np.fft.rfftfreq(len(x), 1 / sr)
+    X[(ff < lo) | (ff > hi)] = 0
+    y = np.fft.irfft(X, len(x))
+    p0 = sr / f0
+    vals = []
+    for t0 in range(int(0.1 * sr), len(y) - int(0.1 * sr), int(0.05 * sr)):
+        seg = y[t0:t0 + int(0.05 * sr)]
+        best = 0.0
+        for lag in range(int(p0 * 0.96), int(p0 * 1.04) + 1):
+            u, v = seg, y[t0 + lag:t0 + lag + len(seg)]
+            if len(v) < len(u):
+                break
+            best = max(best, np.dot(u, v) / np.sqrt(np.dot(u, u) * np.dot(v, v) + 1e-20))
+        vals.append(best)
+    return float(np.mean(vals)) if vals else 0.0
+
+
+if pitched and looped:
+    for lo, hi in ((1500, 3000), (3000, 6000), (6000, min(9500, sr * 0.45))):
+        po, pg = periodicity(a, lo, hi), periodicity(b, lo, hi)
+        row(f"periodicity {lo}-{int(hi)}", f"{po:.2f}", f"{pg:.2f}", abs(pg - po) <= 0.07,
+            "hiss: noise too strong (gap_noise bands)" if pg < po else "too clean: missing noise/smear")
+
 # Loudness wobble over the played second after the attack (looped only; a one-shot's contour is the attack grid).
 e = lambda x: db(np.convolve(x[int(0.1 * sr):] ** 2, np.ones(int(0.01 * sr)) / int(0.01 * sr), "valid"))
 so, sg = (e(a).std(), e(b).std()) if looped else (0.0, 0.0)

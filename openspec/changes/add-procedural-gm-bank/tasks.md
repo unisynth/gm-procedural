@@ -123,6 +123,9 @@ skip when `GM_DLS` is unset.
 - [x] 6.2i One-shot env end (D4j): `tf::env_db_end` (last point past a one-shot's end sits at its end),
   `correct_env` measures it on the last 5 ms and settles it. Test `one_shot_last_point_sits_at_the_end`. Kick
   0.700 → 0.709 (end matched), snare 0.677 → 0.741.
+- [x] 6.2j Eighth feedback round ("405 has shhhsss noise", D4k): `gap_noise` band gains calibrated by per-band
+  periodicity (orig 3–6 kHz 0.80; round 8 0.56 → 0.81); skirt experiment rejected; `measure.py` periodicity
+  check; `GMFIT_DUMP` writes the best gap-noise candidate. Strings 405 0.8122 → 0.7974 (accepted on listening).
 - [x] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
   Done: `.pi/skills/gmfit/SKILL.md` + `measure.py` (the checks the score misses, with thresholds, n/a per wave

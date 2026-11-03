@@ -404,7 +404,7 @@
 "402": {"score":0.0906,"d_spec":4.9876,"d_env":3.4542,"d_loop":7.4247,"d_onset":9.4964,"flags":["env_off"],"f0_orig":586.1433,"f0_gen":586.2235},
 "403": {"score":0.1221,"d_spec":4.7675,"d_env":1.6374,"d_loop":7.6587,"d_onset":9.5306,"flags":["env_off"],"f0_orig":1044.8132,"f0_gen":1045.2633},
 "404": {"score":0.0132,"d_spec":12.3305,"d_env":7.4934,"d_loop":12.7553,"d_onset":11.8355,"flags":["env_off"],"f0_orig":null,"f0_gen":783.7189},
-"405": {"score":0.8122,"d_spec":0.7952,"d_env":0.267,"d_loop":0.3764,"d_onset":0.7906,"flags":["pitch_off"],"f0_orig":220.8744,"f0_gen":222.1632},
+"405": {"score":0.7974,"d_spec":0.7869,"d_env":0.2678,"d_loop":0.5932,"d_onset":0.8012,"flags":["pitch_off"],"f0_orig":220.8744,"f0_gen":222.315},
 "406": {"score":0.2071,"d_spec":3.5435,"d_env":3.8092,"d_loop":4.5313,"d_onset":3.2038,"flags":["env_off","pitch_off"],"f0_orig":496.3051,"f0_gen":493.5483},
 "407": {"score":0.2715,"d_spec":3.1012,"d_env":2.6418,"d_loop":4.084,"d_onset":3.1753,"flags":[],"f0_orig":1313.5349,"f0_gen":1315.5952},
 "408": {"score":0.0051,"d_spec":18.3689,"d_env":4.4349,"d_loop":16.5116,"d_onset":19.5626,"flags":[],"f0_orig":null,"f0_gen":698.5995},

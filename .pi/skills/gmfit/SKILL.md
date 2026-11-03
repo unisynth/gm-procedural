@@ -53,6 +53,8 @@ $G report --baseline                # after an accepted change: rewrite scores.j
 `score_without_correction`; `analyze` gives only score and flags (run `render` for the terms); `fit`, `correct`
 and `refine` give before, after and written. `build/gm/NNN/report.json` holds the same as `render`.
 `GMFIT_TRACE=1` prints refine rounds, correction passes, gap-noise candidates and phase-seed choices.
+`GMFIT_DUMP=/tmp/x.json` writes the best gap-noise candidate even when it is not kept, so you can listen to it or
+render it with `-p`. `render` exits with code 2 for a tier-C wave (scores below B), so chain with `;` not `&&`.
 
 **Placeholders** (`"placeholder": true`, score ≈ 0.01) often show `pitch_off` with f0 at 2×. Run `analyze --force`.
 
@@ -84,6 +86,7 @@ Thresholds are provisional (add-wav-resynthesis design D5). Treat OFF as "listen
 | static / "synthy" sustain | per-harmonic loop-DFT cluster width (cents), pitch-track sd/range, 10 ms RMS sd | vibrato + `vib` table, `am` rows, `side` rows (analyze `loop_modulation`) |
 | buzz in the middle/top | per-period peak/mean of the 2.5–10 kHz band (`score::buzz_band`); flag `buzz` | `phase_seed` (random upper phases) |
 | pattern in the difference map / no "air" | mid-gap floor (bins ≥ per/5 from every harmonic) per band, signed mean | `gap_noise` layer |
+| hiss / "shhh" | per-band periodicity (autocorrelation at one period): lower than the original = too much noise | `gap_noise` bands (periodicity-calibrated, design D4k) |
 | rumble | power below 0.7·f0 | noise `hp` |
 | too bright / dull top | 500 Hz-band levels 6–11 kHz | noise `lp`, harmonic tail |
 | attack click / wrong decay / cut at the end | level per 50 ms × band (`tf` grid); a one-shot's last 10 ms vs the original | `tf`, `env` (one-shot end point, design D4j), drum noise layer |
@@ -106,6 +109,8 @@ Thresholds are provisional (add-wav-resynthesis design D5). Treat OFF as "listen
   out of CMA-ES; the fit drifts them off the loop grid.
 - **Drums.** A fresh `analyze` can be worse than a refined committed file (snare: 0.557 `env_off` vs 0.677).
   Always compare with the backup.
+- **Energy is not texture.** Matching the mid-gap *energy* with noise gave hiss (405 round 8): the original's
+  mid-gap energy was mostly pitched smear. Check periodicity per band (`measure.py`) after adding any noise.
 - **One-shot ends.** The originals end anywhere from −5.8 to −90 dB re peak. A generated one-shot that stays loud
   until its last sample is cut off, and the score barely sees it. Check the last 10 ms (`measure.py` attack grid).
 - **Score drops that are not regressions.** A change can fix what you hear and still lose a little score (gap

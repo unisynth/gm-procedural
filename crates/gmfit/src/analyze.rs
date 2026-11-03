@@ -233,10 +233,45 @@ pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
     if noise < total * 1e-4 {
         return false;
     }
-    let far_mean = |m: &[f32], (a, b): (f32, f32)| {
-        let v: Vec<f32> = (1..nb).filter(|&k| far(k) && hz(k) >= a && hz(k) < b).map(|k| m[k] * m[k]).collect();
-        v.iter().sum::<f32>() / v.len().max(1) as f32
+    // Periodicity of the loop in a band (design D4k): FFT band-pass of the (periodic) loop, then the mean over 50 ms
+    // frames of the best normalised autocorrelation at one period ±4 % (vibrato). 1 = pitched, ~0 = noise.
+    let periodicity = |x: &[f32], (a, b): (f32, f32)| -> f32 {
+        let lp: Vec<f32> = x[s..s + l].to_vec();
+        let mut fft = FftPlanner::<f32>::new();
+        let mut buf: Vec<Complex32> = lp.iter().map(|v| Complex32::new(*v, 0.0)).collect();
+        fft.plan_fft_forward(l).process(&mut buf);
+        for (j, c) in buf.iter_mut().enumerate() {
+            let f = j.min(l - j) as f32 * rate / l as f32;
+            if f < a || f >= b {
+                *c = Complex32::new(0.0, 0.0);
+            }
+        }
+        fft.plan_fft_inverse(l).process(&mut buf);
+        let y: Vec<f32> = buf.iter().map(|c| c.re).collect();
+        let p0 = l as f32 / per as f32;
+        let (lag0, lag1) = ((p0 * 0.96) as usize, (p0 * 1.04).ceil() as usize);
+        let w = (0.05 * rate) as usize;
+        let at = |i: usize| y[i % l];
+        let mut vals = Vec::new();
+        let mut t0 = 0;
+        while t0 + w <= l {
+            let mut best = 0.0f32;
+            for lag in lag0..=lag1 {
+                let (mut xy, mut xx, mut yy) = (0.0f32, 0.0f32, 0.0f32);
+                for i in t0..t0 + w {
+                    let (u, v) = (at(i), at(i + lag));
+                    xy += u * v;
+                    xx += u * u;
+                    yy += v * v;
+                }
+                best = best.max(xy / (xx * yy).sqrt().max(1e-20));
+            }
+            vals.push(best);
+            t0 += w;
+        }
+        vals.iter().sum::<f32>() / vals.len().max(1) as f32
     };
+    let base_render = gmgen::render_wave(i, &base);
     let build = |lp: Option<f32>| -> Option<Params> {
         let mut nz = Layer::new(family("noise").unwrap(), Region::Sustain);
         // dens: half spectrum, bin b at b·rate/l. Bands far below the strongest add nothing audible.
@@ -267,14 +302,22 @@ pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
             .chunks(3)
             .map(|r| (r[0] / (hi / lo).powf(1.0 / 16.0), r[0] * (hi / lo).powf(1.0 / 16.0)))
             .collect();
+        // Noise share per band by periodicity, not by mid-gap energy: a section's mid-gap energy is partly pitched
+        // smear (405 at 3–6 kHz: periodicity 0.80, the energy-matched noise gave 0.56 — audible hiss). Wanted
+        // aperiodic share = (1 − p_orig) − (1 − p_model without noise), current = (1 − p_model) − (1 − p_without).
+        let (po, pn): (Vec<f32>, Vec<f32>) = ranges.iter().map(|&r| (periodicity(orig, r), periodicity(&base_render, r))).unzip();
         for _ in 0..3 {
-            let (mq, _) = dft(&gmgen::render_wave(i, &q)[s..s + l]);
+            let g = gmgen::render_wave(i, &q);
+            let (mq, _) = dft(&g[s..s + l]);
             for (j, &r) in ranges.iter().enumerate() {
-                let (o, g) = (far_mean(&mo, r), far_mean(&mq, r));
-                if o > 0.0 && g > 0.0 {
-                    let gain = &mut q.layers[n].tables[0][3 * j + 2];
-                    *gain = (*gain + 10.0 * (o / g).log10()).clamp(-60.0, 24.0);
-                }
+                let want = pn[j] - po[j];
+                let cur = pn[j] - periodicity(&g, r);
+                let gain = &mut q.layers[n].tables[0][3 * j + 2];
+                *gain = if want <= 0.005 {
+                    -60.0
+                } else {
+                    (*gain + (10.0 * (want / cur.max(0.005)).log10()).clamp(-12.0, 12.0)).clamp(-60.0, 24.0)
+                };
             }
             for (j, h) in q.layers[k].tables[0].iter_mut().enumerate() {
                 let c = (j + 1) * per;
@@ -306,6 +349,11 @@ pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
                 best = Some((sc, q));
             }
         }
+    }
+    // GMFIT_DUMP=<file>: write the best candidate even when it is not kept (listening comparisons).
+    if let (Ok(path), Some((_, q))) = (std::env::var("GMFIT_DUMP"), best.as_ref()) {
+        let wf = gmgen::params_json::WaveFile { wave: i as u32, params: q.clone(), placeholder: false, note: String::new() };
+        let _ = std::fs::write(path, gmgen::params_json::to_json(&wf));
     }
     match best {
         Some((sc, q)) if sc + 0.005 >= before => {
