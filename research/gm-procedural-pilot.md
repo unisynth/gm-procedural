@@ -174,6 +174,25 @@ Dead ends on the way:
 
 Score 0.8122 against 0.8157: `d_loop` +0.09 from ±0.5 dB noise inside the harmonic groups.
 
+## Round 9: refit the other pilot waves with the current pipeline
+
+Rounds 5–8 only refit Strings 405. The other five were re-run (analyze → fit → correct → refine), and each result
+was kept only when it scored better.
+
+| wave | before | refit | kept |
+|---|---|---|---|
+| kick 376 | 0.6996 | 0.6996 | old |
+| snare 161 | 0.6769 | 0.5565 (`env_off`) | old |
+| hat 83 | 0.6511 | **0.7183** | new |
+| Fingered Bass 240 | 0.8887 | 0.8877 | old |
+| Piano 293 | 0.7534 | **0.7573** | new |
+
+- **No `buzz` flag** on any pilot wave.
+- **Gap floor:** Bass 240 loops a single period (89 samples), so it has no gaps between harmonics. Piano 293's
+  gaps match the original in every band (±1 dB where audible; the 3–6 kHz floor −53.0/−52.9).
+- **Snare:** a fresh analysis is worse than the committed refined snare. The refine history matters for drums
+  (`env_off` on a fresh fit).
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.

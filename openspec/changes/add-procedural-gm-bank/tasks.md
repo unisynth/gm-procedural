@@ -118,6 +118,8 @@ skip when `GM_DLS` is unset.
 - [x] 6.2g Seventh feedback round (pattern in the difference map): `gap_noise` periodic noise sustain layer from
   the mid-gap floor (comb-picked spacing, band/harmonic refinement on the render, hp 0.7·f0, lp by score),
   also re-run at the end of `correct_all`. Strings 405: mid-gap floor matched, score 0.8157 → 0.8122.
+- [x] 6.2h Refit the other pilot waves with the current pipeline (keep if better): hat 0.651 → 0.718, Piano 293
+  0.753 → 0.757; kick, snare and bass unchanged. No `buzz` flags; gap floors match (bass loop = 1 period).
 - [ ] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
 
