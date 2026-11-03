@@ -37,7 +37,7 @@ skip when `GM_DLS` is unset.
   - Tests: accuracy bounds of the approximations.
   - Verify: `cargo test -p gmgen` passes and `cargo clippy -p gmgen` is clean.
 - [x] 3.2 Add the `build.rs` that packs `structure.json` and `waves/*.json` into a binary table. It validates the
-  family names, the 4-layer / 256-number budget, ranges and missing waves, and errors name the wave.
+  family names, the 4-layer / 512-number budget, ranges and missing waves, and errors name the wave.
   - Tests: a fixture directory with an over-budget wave, an unknown family and a missing wave each fails with the
     expected message.
 - [x] 3.3 Add the bank builder `build(mask) -> Vec<u8>` with the layer regions `attack` / `sustain` / `whole` (D3),
@@ -110,6 +110,9 @@ skip when `GM_DLS` is unset.
 - [x] 6.2d Fourth feedback round ("405 needs to improve"): `additive` tables `am` (per-harmonic loudness curve,
   1×–4× vibrato rate) and `vib` (pitch curve Fourier series 1×–6×), analysis `loop_modulation` from per-harmonic
   complex envelopes. Strings 405: 0.674 → 0.788.
+- [x] 6.2e Fifth feedback round ("retry", budget may grow): `MAX_NUMBERS` 256 → 512; `additive` table `side`
+  (sideband components per harmonic on the loop grid); analysis fills harmonics 1–12 to 99.5 % energy within
+  the room left after the `am` rows. Strings 405: 0.788 → 0.815.
 - [ ] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
 

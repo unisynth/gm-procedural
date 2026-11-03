@@ -27,7 +27,7 @@ pub struct Family {
 /// Most layers per wave.
 pub const MAX_LAYERS: usize = 4;
 /// Most numbers per wave (explicit scalars + table entries + correction entries + wave scalars).
-pub const MAX_NUMBERS: usize = 256;
+pub const MAX_NUMBERS: usize = 512;
 /// Most harmonic-correction entries.
 pub const MAX_CORRECTION: usize = 128;
 
@@ -120,6 +120,9 @@ pub const FAMILIES: &[Family] = &[
             // Vibrato pitch curve as a Fourier series over the vibrato rate: [cents, phase] for 1×, 2×, … (overrides
             // `vib_cents`/`vib_phase`).
             Table { name: "vib", width: 2, max_rows: 8 },
+            // Sideband components of a harmonic on the loop grid: [harmonic, bin offset, dB re its level, phase].
+            // A harmonic with rows is exactly those components (its AM/FM live in them): no unison/spread/vib/am.
+            Table { name: "side", width: 4, max_rows: 96 },
         ],
         periodic: true,
     },

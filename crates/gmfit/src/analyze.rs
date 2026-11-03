@@ -321,7 +321,55 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
                         // The table level is the unmodulated level: remove the modulation's power excess.
                         harm[k] -= excess;
                     }
-                    sus.tables[2] = am;
+                    // Sideband components (exact AM/FM of each harmonic): for harmonics 1–12 while the budget allows,
+                    // the strongest loop bins of each cluster until 99.5 % of its energy (≤ 11), scaled to the
+                    // cluster energy; they replace the `am` rows. (The small components shape the loudness dips:
+                    // 97 % / ≤ 7 matched the spectrum but not the envelope.)
+                    let mut side = Vec::new();
+                    // Room: harmonic table, vib rows, the `am` rows kept for the harmonics past the sidebands, and
+                    // ~60 numbers for scalars and correction tables.
+                    let room = MAX_NUMBERS.saturating_sub(harm.len() + 12 + 60 + am.len());
+                    for (k, &c) in centres.iter().enumerate().take(12) {
+                        if side.len() + 4 * 11 > room {
+                            break;
+                        }
+                        let lo = c.saturating_sub(w).max(1);
+                        let bins: Vec<usize> = (lo..=(c + w).min(l / 2)).collect();
+                        let e: f32 = bins.iter().map(|b| mag[*b] * mag[*b]).sum();
+                        if e <= 0.0 {
+                            continue;
+                        }
+                        let mut by: Vec<usize> = bins.clone();
+                        by.sort_by(|a, b| mag[*b].total_cmp(&mag[*a]));
+                        let mut got = 0.0;
+                        let first = side.len();
+                        for &b in by.iter().take(11) {
+                            let ph = (phs[b] + std::f32::consts::FRAC_PI_2) / std::f32::consts::TAU - ((b * s) % l) as f32 / l as f32;
+                            side.extend_from_slice(&[(k + 1) as f32, b as f32 - c as f32, 20.0 * (mag[b] / e.sqrt()).max(1e-6).log10(), ph - ph.floor()]);
+                            got += mag[b] * mag[b];
+                            if got >= 0.995 * e {
+                                break;
+                            }
+                        }
+                        // Scale the kept components to the whole cluster's energy.
+                        let g = 10.0 * (e / got.max(1e-20)).log10();
+                        side[first..].chunks_mut(4).for_each(|r| r[2] += g);
+                    }
+                    if harm.len() + side.len() + 12 + 60 <= MAX_NUMBERS {
+                        // Sideband harmonics keep their full cluster level (no AM excess to remove).
+                        let n_side = side.chunks(4).map(|r| r[0] as usize).max().unwrap_or(0);
+                        for (k, (_, excess)) in mm.am.iter().enumerate().take(n_side) {
+                            harm[k] += excess;
+                        }
+                        // Harmonics past the sideband rows keep their `am` rows (rows of the sideband harmonics are
+                        // ignored by the generator, so only add rows when some harmonic needs them).
+                        if mm.am.len() > n_side {
+                            sus.tables[2] = am;
+                        }
+                        sus.tables[4] = side;
+                    } else {
+                        sus.tables[2] = am;
+                    }
                     sus.tables[3] = mm.vib.iter().enumerate().flat_map(|(j, c)| [c.0.min(100.0), shift(c.1, j + 1)]).collect();
                 } else {
                     let (am, th) = loop_am(lp, rate, n);

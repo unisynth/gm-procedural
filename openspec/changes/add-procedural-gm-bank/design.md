@@ -13,7 +13,7 @@
   - 448 waves are melodic and 91 belong to drum kits.
 - `crates/player` has no audio yet. In this change the bank policy is used by the `song` CLI, synth-wasm and the
   DAW. The player adopts the policy when it gains audio.
-- The user's constraints: synthesis models only, ≤ 256 numbers per wave, no stored sample data, and harmonic tables
+- The user's constraints: synthesis models only, ≤ 512 numbers per wave, no stored sample data, and harmonic tables
   are allowed. Code size and parameter size do not matter.
 
 ## Goals / Non-Goals
@@ -100,7 +100,7 @@ that uses the wave, out of a committed priors table (`crates/gmfit/src/priors.rs
 
 The priors also narrow the CMA-ES ranges, for example ±5 % around a mode ratio.
 
-A wave has at most 4 layers and at most 256 numbers. Harmonic table entries count towards the 256. Because of the
+A wave has at most 4 layers and at most 512 numbers. Harmonic table entries count towards the 512. Because of the
 contiguous table plus tail slope, about 200 harmonics fit in the budget for low, bright waves. Phases are not counted
 in the spectral score (D6), so they are stored only for the first P harmonics, and only when the waveform shape is
 audible (sharp pulses).
@@ -226,6 +226,29 @@ Adopted:
 *Measured:* Strings 0.674 → 0.788; loop loudness sd 1.21 dB against the original's 1.20; pitch sd 11.1 against 11.9
 cents.
 
+### D4g. Sideband rows and a 512-number budget (Strings 405, round 6)
+Feedback: "retry", then "increase budget if needed". The budget went from 256 to 512 numbers per wave.
+
+New `additive` table `side`: rows of [harmonic, loop-bin offset, dB re the harmonic's level, phase]. A harmonic
+with rows is exactly those components on the loop grid, so its own AM, its own FM and their interaction are
+reproduced. Unison, `spread`, `vib` and `am` don't apply to it.
+
+The analysis takes, for harmonics 1–12 while the room lasts, the strongest bins of each cluster until 99.5 % of its
+energy (≤ 11), scaled to the full cluster energy. The `am` rows remain for the harmonics past them.
+
+| Measured | 97 % / ≤ 7 bins | 99.5 % / ≤ 11 bins |
+|---|---|---|
+| d_spec | 0.93 (better) | 0.82 |
+| d_env | 0.53 (worse) | 0.27 |
+
+At 97 % the dropped small components are what shape the loudness dips.
+
+Strings 0.788 → 0.815. Low-harmonic cluster widths are now 11/12, 12/15 and 15/17 cents against the original.
+
+Rejected:
+- `spread` on the harmonics past the `am` rows: −0.02.
+- Partials up to 0.495·rate: +0.008 on 405, but it regressed 33 placeholder waves.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators
@@ -326,7 +349,7 @@ the mask is used for tests and timing.
 
 ## Risks / Trade-offs
 
-- [Piano, nylon guitar, sax and choir attacks will not reach tier A within 256 numbers] → The report shows it. The
+- [Piano, nylon guitar, sax and choir attacks will not reach tier A within 512 numbers] → The report shows it. The
   score weights sustain as heard. Accept tier B for these and prioritise the waves used by songs in `project/music`.
 - [The score disagrees with listening (a high score that sounds wrong)] → A/B listening in the DAW is part of the
   loop. The pilot calibrates the weights against listening before the bulk fit.

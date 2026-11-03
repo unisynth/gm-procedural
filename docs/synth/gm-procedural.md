@@ -31,7 +31,7 @@ flowchart LR
   ```
 
   `placeholder: true` marks a file written by `gmfit placeholder`, which is not fitted yet.
-- **Budget.** A wave has at most 4 layers and at most 256 numbers. The count covers explicit scalars, table
+- **Budget.** A wave has at most 4 layers and at most 512 numbers. The count covers explicit scalars, table
   entries, correction entries and wave scalars. Omitted scalars take their defaults and do not count. The build
   rejects an over-budget wave, an unknown family or parameter, an out-of-range value, and `sustain` on a family that
   cannot be periodic. The error names the file and the wave.
@@ -90,6 +90,7 @@ structural (the string-attack hand-over), so `fit` never tunes it.
 | `am_db`, `am_phase` | 0…12 dB, 0…1 | 0, 0 | amplitude modulation locked to the vibrato phasor (body-resonance wobble of a vibrato loop) |
 | table `am` | rows of 8 | – | per-harmonic loudness curve: [dB, phase] at 1×–4× the vibrato rate (row k = harmonic k), on the vibrato phasor |
 | table `vib` | rows of 2, ≤ 8 | – | pitch curve: [cents, phase] at 1×, 2×, … the vibrato rate; overrides `vib_cents`/`vib_phase` |
+| table `side` | rows of 4, ≤ 96 | – | sideband components [harmonic, loop-bin offset, dB re harmonic level, phase]; a harmonic with rows is exactly these components (its AM/FM included), with no unison/spread/vib/am |
 | `spread` | 0…50 cents | 0 | ensemble: each partial is a Gaussian cluster of components (sd in cents, spacing ≥ 1 grid step, ≤ 25 components, power kept, fixed pseudo-random phases) on the loop grid. Replaces `unison` |
 | `vib_rate`, `vib_cents` | 0…12, 0…100 | 0, 0 | vibrato as phase modulation, rate snapped to the loop grid |
 | `scoop_cents`, `scoop_t` | ±200, 0.001…1 | 0, 0.03 | onset pitch scoop; gone by the loop start |
@@ -188,6 +189,8 @@ vowels, Hammond footages, piano B, vibrato and scoop.
     analytic, inverse DFT). The `am` rows come from the dB envelope projected on 1×–4× the rate (first 12
     harmonics; the harmonic table is lowered by the modulation's power excess). The `vib` rows come from harmonic
     1's smoothed instantaneous frequency projected on 1×–6×.
+  - With room left after the `am` rows, harmonics 1–12 get `side` rows: the strongest cluster bins until 99.5 %
+    of the energy (≤ 11), scaled to the cluster energy. These harmonics are then exact on the loop.
   - Inharmonic priors centre each loop cluster on the stretched partial (running B).
   - Drums get a broadband `noise` layer like snares (bands below 2× the body removed, level from the energy share
     above it).
@@ -236,7 +239,7 @@ result is kept only if better.
 | Piano 293 | 0.74 | 0.84 | 0.85 (stiff-string alternative 0.84) |
 | Fingered Bass 240 | 0.956 | 0.985 | 0.985 |
 
-Round 5: Strings 0.79 (per-harmonic `am` + `vib` tables). Round 4 under the A-weighted score with `d_onset`: kick 0.70 (from 0.41 with the drum noise layer), snare 0.68,
+Round 6: Strings 0.815 (`side` rows, 512-number budget). Round 5: Strings 0.79 (per-harmonic `am` + `vib` tables). Round 4 under the A-weighted score with `d_onset`: kick 0.70 (from 0.41 with the drum noise layer), snare 0.68,
 hat 0.65, Bass 0.89, Strings 0.67 (loop vibrato + AM), Piano 0.75 (stiff string + stretched loop).
 
 | Measured (pilot preparation) | Score |

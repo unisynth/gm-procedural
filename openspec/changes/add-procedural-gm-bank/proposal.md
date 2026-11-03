@@ -12,7 +12,7 @@ the same instruments, regions and wave indices, so existing songs play unchanged
 The bank is small enough to make close matching realistic. It holds 495 waves and 1.54 M samples in total. The median
 wave is 2005 samples. 439 waves are a short attack followed by a loop that is a few periods long. A harmonic table
 describes such a loop precisely. Each wave is therefore **synthesised by per-family models** (additive with harmonic
-tables, Karplus-Strong, modal, noise, drum, formant, subtractive) within a budget of **≤ 256 numbers per wave**. No
+tables, Karplus-Strong, modal, noise, drum, formant, subtractive) within a budget of **≤ 512 numbers per wave**. No
 waveform or residual PCM is stored, so the result is synthesis and not a compressed copy of the recording.
 
 ## What Changes
@@ -25,7 +25,7 @@ waveform or residual PCM is stored, so the result is synthesis and not a compres
     `drum`, `metal` (808-style inharmonic squares), `shaker` (PhISEM), `fm`, `formant` and `subtractive`. Per-instrument
     techniques and priors: `research/gm-procedural-instruments.md`. A wave may add an optional **harmonic correction table** (per-harmonic dB gains on
     the layer sum). It is exact on the loop and works as a smooth EQ on the attack. It fixes the timbre that the
-    behavioural model misses. A wave holds ≤ 256 numbers in total, and harmonic table entries count towards that.
+    behavioural model misses. A wave holds ≤ 512 numbers in total, and harmonic table entries count towards that.
     No sample data is stored.
   - Output: a complete `RIFF 'DLS '` buffer that the existing `dls::Dls::parse` reads. Consumers need no changes.
   - The output is bit-identical on native and wasm32, because it uses its own math and no `libm` transcendental

@@ -45,7 +45,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         Vec::new()
     };
     let am_db = l.get("am_db");
-    let (am_tab, vib_tab) = (l.table("am"), l.table("vib"));
+    let (am_tab, vib_tab, side_tab) = (l.table("am"), l.table("vib"), l.table("side"));
     let modulated = l.get("vib_cents") > 0.0 || am_db > 0.0 || !am_tab.is_empty() || !vib_tab.is_empty();
     let vib_n = if modulated { ctx.grid(l.get("vib_rate")) } else { 0 };
     let vib_hz = ctx.hz(vib_n);
@@ -111,6 +111,9 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         if fk > nyq {
             break;
         }
+        // With an `am` table, `spread` covers only the harmonics past it (their irregular ensemble flutter); the
+        // tabled ones keep their locked modulation.
+        let spread = if k <= am_tab.len() / 8 { 0.0 } else { spread };
         let voices = if spread > 0.0 { 1 } else { unison };
         let a = db(a_db) * level * if k % 2 == 0 { even } else { 1.0 } / sqrt(voices as f32);
         for (j, v) in amp.iter_mut().enumerate() {
@@ -127,7 +130,16 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         let ph0 = phase.get(k - 1).copied().unwrap_or(-(kf * (kf - 1.0)) / (2.0 * k_table.max(8) as f32));
         // Components: (grid frequency, amplitude factor, phase offset in cycles).
         let mut comps: Vec<(u32, f32, f32)> = Vec::new();
-        if spread > 0.0 {
+        let sides: Vec<&[f32]> = side_tab.chunks(4).filter(|r| (r[0] + 0.5) as usize == k).collect();
+        if !sides.is_empty() {
+            let c = ctx.grid(fk) as i64;
+            for r in &sides {
+                let n = c + if r[1] < 0.0 { (r[1] - 0.5) as i64 } else { (r[1] + 0.5) as i64 };
+                if n > 0 {
+                    comps.push((n as u32, db(r[2]), r[3]));
+                }
+            }
+        } else if spread > 0.0 {
             let c = ctx.grid(fk);
             let sd = fk * (crate::math::exp2(spread / 1200.0) - 1.0);
             let step = ctx.hz(1).max(1e-6);
@@ -165,7 +177,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         // This harmonic's own loudness modulation (body resonances swept by the vibrato).
         // Row: [dB, phase] at 1×…4× rate.
         let hm: Vec<f32> = match am_tab.chunks(8).nth(k - 1) {
-            Some(r) if vib_n > 0 && r.chunks(2).any(|t| t[0] != 0.0) => modu
+            Some(r) if vib_n > 0 && sides.is_empty() && r.chunks(2).any(|t| t[0] != 0.0) => modu
                 .iter()
                 .map(|u| db(r.chunks(2).enumerate().map(|(j, t)| t[0] * crate::math::cos_cycles(t[1] + (j + 1) as f32 * u)).sum()))
                 .collect(),
@@ -179,11 +191,11 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
 
             let mut ph = Phasor::new(nk, ctx.den);
             for (i, o) in out.iter_mut().enumerate() {
-                let mut c = ph.tick() + ph0 + wph;
+                let mut c = ph.tick() + if sides.is_empty() { ph0 } else { 0.0 } + wph;
                 if !scoop.is_empty() {
                     c += fr * scoop[i];
                 }
-                if !vib.is_empty() {
+                if !vib.is_empty() && sides.is_empty() {
                     c += fr * vib[i];
                 }
                 let a = if i >= hold {
@@ -192,7 +204,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
                     let (j, w) = (i / CR, (i % CR) as f32 / CR as f32);
                     amp[j] + (amp[j + 1] - amp[j]) * w
                 };
-                let a = if am.is_empty() { a } else { a * am[i] };
+                let a = if am.is_empty() || !sides.is_empty() { a } else { a * am[i] };
                 let a = if hm.is_empty() { a } else { a * hm[i] };
                 *o += wamp * a * sin_cycles(c);
             }

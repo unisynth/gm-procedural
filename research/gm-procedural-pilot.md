@@ -118,6 +118,23 @@ Per-harmonic complex envelopes of the loop:
 - **Result:** the `am` (4 terms × 12 harmonics) and `vib` (6 terms) tables. Score 0.674 → 0.788, loudness sd 1.21
   against 1.20 dB, pitch sd 11.1 against 11.9 cents. The cluster widths are still about 2/3 of the original's.
 
+## Round 6: "retry" (budget 512)
+
+A harmonic's complex envelope over the loop *is* its cluster of loop-DFT bins. The 5 strongest bins hold 88–100 %
+of h1–h5 and 76–92 % of h6–h8. Storing those as `side` rows reproduces each harmonic's AM, FM and their interaction
+exactly.
+
+| variant | analysis | full pipeline | d_spec | d_env |
+|---|---|---|---|---|
+| round 5 (`am` 4 terms + `vib`) | 0.765 | 0.788 | 1.14 | 0.12 |
+| `side` 97 %, ≤ 7 bins, h1–12 | 0.754 | 0.772 | 0.93 | 0.53 |
+| `side` h1–17 (≤ 5 above h8) | 0.749 | – | – | – |
+| `side` 99.5 %, ≤ 11 bins, h1–7 + `am` h8–12 | 0.792 | **0.815** | 0.82 | 0.27 |
+
+- The small components shape the loudness dips. With them, the low-harmonic cluster widths reach 11/12, 12/15
+  and 15/17 cents (original/round 5: 12/8, 15/8, 17/7).
+- Pitch sd 10.5 against 11.9 cents, and loudness sd 1.13 against 1.20 dB.
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.

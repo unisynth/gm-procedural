@@ -40,10 +40,10 @@ Generation SHALL be a pure function of the committed parameters and SHALL produc
 - **THEN** both buffers are byte-identical
 
 ### Requirement: Synthesis models within a parameter budget
-Each wave SHALL be the sum of at most 4 layers, each from a fixed model family (`additive` with harmonic table, `ks`, `modal`, `noise`, `drum`, `metal`, `shaker`, `fm`, `formant`, `subtractive`), described by at most 256 numbers in total including harmonic table entries. Parameters SHALL NOT contain sample data (waveform, residual or wavetable PCM).
+Each wave SHALL be the sum of at most 4 layers, each from a fixed model family (`additive` with harmonic table, `ks`, `modal`, `noise`, `drum`, `metal`, `shaker`, `fm`, `formant`, `subtractive`), described by at most 512 numbers in total including harmonic table entries. Parameters SHALL NOT contain sample data (waveform, residual or wavetable PCM).
 
 #### Scenario: Budget exceeded
-- **WHEN** a wave's parameter set holds more than 256 numbers or more than 4 layers
+- **WHEN** a wave's parameter set holds more than 512 numbers or more than 4 layers
 - **THEN** loading the parameters fails naming the wave and its count
 
 #### Scenario: Unknown model family
@@ -55,7 +55,7 @@ Each wave SHALL be the sum of at most 4 layers, each from a fixed model family (
 - **THEN** the written parameter set is within the layer and number budget
 
 ### Requirement: Optional harmonic correction
-A wave MAY carry one harmonic correction table: per-harmonic gains (dB, clamped to ±24 dB) relative to the wave's fundamental, applied to the sum of its layers. On the loop it SHALL act exactly per harmonic; on the attack as a smooth EQ through the same points. Its entries count toward the 256-number budget. A wave without the table SHALL render as the plain sum of its layers.
+A wave MAY carry one harmonic correction table: per-harmonic gains (dB, clamped to ±24 dB) relative to the wave's fundamental, applied to the sum of its layers. On the loop it SHALL act exactly per harmonic; on the attack as a smooth EQ through the same points. Its entries count toward the 512-number budget. A wave without the table SHALL render as the plain sum of its layers.
 
 #### Scenario: Correction fixes loop timbre
 - **WHEN** a `ks` wave whose loop has harmonic 3 at -6 dB relative to the original gets a correction table with +6 dB at harmonic 3
@@ -70,7 +70,7 @@ A wave MAY carry one harmonic correction table: per-harmonic gains (dB, clamped 
 - **THEN** its output equals the sum of its layers byte for byte
 
 ### Requirement: Optional time × band correction
-A wave MAY carry one time × band correction table `tf` of dB gains (±24 dB) on a fixed grid of bands × time rows (design D4c). It SHALL shape the attack, or the whole unlooped wave, after the harmonic correction. A loop SHALL stay untouched, with the gains fading to 0 dB before the loop start. Its entries count toward the 256-number budget.
+A wave MAY carry one time × band correction table `tf` of dB gains (±24 dB) on a fixed grid of bands × time rows (design D4c). It SHALL shape the attack, or the whole unlooped wave, after the harmonic correction. A loop SHALL stay untouched, with the gains fading to 0 dB before the loop start. Its entries count toward the 512-number budget.
 
 #### Scenario: Band gain lands
 - **WHEN** a wave gets `tf` +6 dB on bands 8–12 and 0 dB elsewhere
@@ -81,7 +81,7 @@ A wave MAY carry one time × band correction table `tf` of dB gains (±24 dB) on
 - **THEN** after the harmonic table it sets each `tf` cell from the original − model band energy over the attack, over 4 passes, trims the harmonic table's tail if the budget needs room, and writes the result only if the score improves
 
 ### Requirement: Optional fine envelope correction
-A wave MAY carry an `env` table of dB gains at fixed onset times (design D4d), applied per sample to the attack after the `tf` table. A loop SHALL stay untouched, with the gains fading to 0 dB before the loop start. Its entries count toward the 256-number budget.
+A wave MAY carry an `env` table of dB gains at fixed onset times (design D4d), applied per sample to the attack after the `tf` table. A loop SHALL stay untouched, with the gains fading to 0 dB before the loop start. Its entries count toward the 512-number budget.
 
 #### Scenario: Flat envelope gain lands
 - **WHEN** a looped wave gets an `env` table of -6 dB at every point after the first

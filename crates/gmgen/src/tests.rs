@@ -171,12 +171,12 @@ mod pack_and_json {
     fn over_budget_fails_naming_the_wave() {
         let harm: Vec<String> = (0..240).map(|_| "-6".into()).collect();
         let w = format!(
-            r#"{{"wave": 1, "correction": [{}], "layers": [{{"family": "additive", "t": {{"harm": [{}]}}}}]}}"#,
-            (0..20).map(|_| "0").collect::<Vec<_>>().join(","),
-            harm.join(",")
+            r#"{{"wave": 1, "correction": [{}], "layers": [{{"family": "additive", "t": {{"harm": [{h}]}}}}, {{"family": "additive", "t": {{"harm": [{h}]}}}}]}}"#,
+            (0..40).map(|_| "0").collect::<Vec<_>>().join(","),
+            h = harm.join(",")
         );
         let e = pack(&fixture("budget", &[("001.json", &w)])).err().unwrap();
-        assert!(e.contains("wave 1") && e.contains("numbers (max 256)"), "{e}");
+        assert!(e.contains("wave 1") && e.contains("numbers (max 512)"), "{e}");
     }
 
     #[test]
