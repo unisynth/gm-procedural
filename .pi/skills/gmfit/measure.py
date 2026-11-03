@@ -144,6 +144,73 @@ m = f >= 0.35 * sr
 to, tg = db(A[m].sum() / tot), db(B[m].sum() / tot)
 row("top 0.35-0.5 rate", f"{to:.1f}", f"{tg:.1f}", to < -60 or abs(tg - to) <= 6, "noise lp, harmonic tail", " dB")
 
+# Character (design D4l of add-procedural-gm-bank): tonal share, strongest peaks, onsets, glide, periodicity.
+def tonal(x):
+    x = x[: int(0.3 * sr)]
+    nf = 1 << int(np.ceil(np.log2(max(len(x), 1024))))
+    P = np.abs(np.fft.rfft(x * np.hanning(len(x)), nf)) ** 2
+    ff = np.fft.rfftfreq(nf, 1 / sr)
+    band = (ff > 200) & (ff < 0.45 * sr)
+    idx = np.where(band)[0]
+    pk = [k for k in idx[3:-3] if P[k] == P[k - 3:k + 4].max()]
+    pk = sorted(pk, key=lambda k: -P[k])[:8]
+    w = max(1, nf // len(x)) * 2
+    share = sum(P[max(0, k - w):k + w + 1].sum() for k in pk) / max(P[band].sum(), 1e-30)
+    return share, [int(ff[k]) for k in pk[:4]]
+
+
+def onset_count(x):
+    h = max(1, int(0.002 * sr))
+    e = np.array([db(np.mean(x[i:i + 2 * h] ** 2)) for i in range(0, len(x) - 2 * h, h)])
+    if len(e) < 3:
+        return 0
+    top, last, n = e.max(), -10, 0
+    for k in range(2, len(e)):
+        if e[k] > top - 35 and e[k] - e[k - 2] >= 5 and k >= last + 5:
+            n, last = n + 1, k
+    return n
+
+
+def glide_cents(x):
+    x = x[: int(0.1 * sr)]
+    P = np.abs(np.fft.rfft(x * np.hanning(len(x)), 1 << 15))
+    f1 = np.fft.rfftfreq(1 << 15, 1 / sr)[np.argmax(P[10:]) + 10]
+    X = np.fft.rfft(x, 1 << 15)
+    fx = np.fft.rfftfreq(1 << 15, 1 / sr)
+    X[(fx < 0.6 * f1) | (fx > 2 * f1)] = 0
+    y = np.fft.irfft(X, 1 << 15)[: len(x)]
+    z = [k + y[k] / (y[k] - y[k + 1]) for k in range(len(y) - 1) if y[k] <= 0 < y[k + 1]]
+    z = [c for c in z if c >= sr / f1]
+    if len(z) < 4:
+        return 0.0
+    first = np.median([sr / (z[i + 1] - z[i]) for i in range(3)])
+    last = np.median([sr / (z[i + 1] - z[i]) for i in range(len(z) - 4, len(z) - 1)])
+    return 1200 * np.log2(first / last)
+
+
+def periodicity1(x):
+    n = int(0.03 * sr)
+    vals, top = [], max(np.sum(x[i:i + n] ** 2) for i in range(0, max(1, min(len(x), int(0.3 * sr)) - n + 1), n // 2))
+    for i in range(0, min(len(x), int(0.3 * sr)) - n + 1, n // 2):
+        s = x[i:i + n]
+        if np.sum(s * s) < top * 1e-3:
+            continue
+        r = np.correlate(s, s, "full")[n - 1:]
+        vals.append(min(1.0, max(r[k] / r[0] * n / (n - k) for k in range(int(0.0005 * sr), int(0.025 * sr)))))
+    return float(np.mean(vals)) if vals else 0.0
+
+
+(to_, po), (tg_, pg) = tonal(a), tonal(b)
+row("tonal share (8 peaks)", f"{to_:.2f}", f"{tg_:.2f}", abs(tg_ - to_) <= 0.15,
+    "modal modes (few pure tones)" if to_ > tg_ else "noise/residual layer")
+rows.append(f"strongest peaks Hz       orig {po}  gen {pg}")
+oo, og = onset_count(a[: int(0.5 * sr)]), onset_count(b[: int(0.5 * sr)])
+row("onsets (first 0.5 s)", f"{oo}", f"{og}", abs(oo - og) <= max(1, oo // 4), "modal `hits` table (rattle/scrape)")
+go, gg = glide_cents(a), glide_cents(b)
+row("glide (cents)", f"{go:.0f}", f"{gg:.0f}", abs(go - gg) <= max(50, 0.3 * abs(go)), "modal glide/glide_t")
+qo, qg = periodicity1(a), periodicity1(b)
+row("periodicity", f"{qo:.2f}", f"{qg:.2f}", abs(qg - qo) <= 0.15, "noise too strong" if qg < qo else "add noise/click")
+
 # Attack: level per 50 ms x 4 bands over the first 0.3 s (tf grid, coarse).
 off_cells = []
 for t0 in range(0, int(0.3 * sr), int(0.05 * sr)):

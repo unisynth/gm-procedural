@@ -239,6 +239,27 @@ failed on things the score could not see, so the rule for the bulk fit is: tier 
   7.5–10.5 kHz, above the dense `harm` table's reach and the 0.45·rate cutoff. It needs sparse loop partials.
 - Bug found: `correct_env`'s one-shot tail step indexed an empty env table when no pass was kept (fixed).
 
+## Drum listening after pass 1 → character analysis (design D4l)
+
+The user named 18 drum waves ("drums which are not noise based have problems"). `modal` family + character
+analysis + `d_per`, then `gmfit bulk --cat drums` pass 2: 52 of 91 improved (mean +0.09), 47 use `modal`,
+drums 4 A / 19 B / 68 C, no regressions.
+
+| wave | heard | pass 1 | pass 2 | character now |
+|---|---|---|---|---|
+| 446 triangle | not periodic | 0.10 | 0.50 | peaks 5827/9062/3305/7181 = original |
+| 25 agogo | missing metal | 0.46 | 0.66 | 1561/6556/5071 Hz bell tones |
+| 192, 227, 270 congas | sine, not conga | 0.54, 0.49, 0.47 | 0.67, 0.64, 0.63 | conga modes (227: 742 + 376 Hz) |
+| 439 timbale | sine | 0.39 | 0.73 | modes 479/1162/678/247 Hz |
+| 229, 410 whistles | | 0.31, 0.44 | 0.63, 0.66 | peaks right, but fixed modes beat (AM); original is a trill (FM) |
+| 316 cymbal | other tonal | 0.48 | 0.54* | 9307/8247/9679 Hz peaks |
+| 49 belltree | no xylophone | 0.04 | 0.26 | sparse loop bins |
+| 228 guiro | rattle | 0.39 | 0.41 | 7 of 13 onsets |
+| 476 vibraslap, 50 bird | rattle / chirps | 0.43, 0.11 | same | hit trains not kept |
+| 196, 58, 272, 315, 84 | | | same | prior models kept |
+
+(*rescored with `d_per`.) Open: FM (trill) partials, irregular rattle trains in loops, cymbal sustain.
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.

@@ -138,8 +138,11 @@ skip when `GM_DLS` is unset.
   - Tests: pitch accuracy within 2 cents, decay time within 10 %, and a pick position at ½ removes the even
     harmonics.
   - Check it on 3 guitar/bass waves plus the sitar. Verify all 4 score above their placeholder score.
-- [ ] 7.2 Add the `modal` family (modes × ratio/amplitude/decay, strike noise), with tests for mode frequencies and
+- [x] 7.2 Add the `modal` family (modes × ratio/amplitude/decay, strike noise), with tests for mode frequencies and
   decays. Check it on 3 mallet and bell waves. Verify all 3 score above their placeholder score.
+  Done as design D4l: absolute-Hz modes, glide, hit train / measured `hits` table, band-passed click, periodic
+  sustain (sparse loop bins or folded train); character analysis `gmfit/src/modal.rs`; `d_per` score term.
+  Bell/metal checks: agogo 25 0.03 → 0.69, triangle 446 0.00 → 0.50, belltree 49 0.00 → 0.26.
 - [ ] 7.3 Add the `formant` family (pulse/saw source, ≤ 5 formants), with tests for formant peak positions. Check it
   on 2 choir/voice waves. Verify both score above their placeholder score.
 - [ ] 7.4 Add the `subtractive` family (2 oscillators, resonant filter with envelope), with tests for cutoff response.

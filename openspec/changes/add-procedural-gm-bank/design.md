@@ -343,6 +343,38 @@ The score drops 0.8122 → 0.7974. `d_loop` rises 0.38 → 0.59: the 10–10.8 k
 generator's partial limit, and h19/h22 sit 3–5 dB low. The score does not hear the hiss, so the result was
 written and re-baselined on listening feedback. `measure.py` now has the periodicity check.
 
+### D4l. Character analysis and the `modal` family (drum listening after bulk pass 1)
+Feedback on the drum A/B page named about 18 waves. Measured on orig vs gen (`measure.py` now prints these):
+
+| Heard | Waves | Measured |
+|---|---|---|
+| noise where the original is a few pure tones | congas 192/227/270, timbale 439, whistles 229/410, triangle 446, agogo 25, belltree 49 | tonal share (energy in the 8 strongest peaks) 0.82–0.98 vs 0.42–0.69; wrong peak frequencies |
+| falling sine / chirp | 196, bird 50 | glide of the strongest partial |
+| rattle / scrape | vibraslap 476, guiro 228 | 9–13 onsets in 0.5 s, irregular spacing |
+| cymbal loops with other tones | 272, 316, 84, 315 | 1-period loops whose energy is scattered bins (no harmonic series) |
+
+**`modal` family** (task 7.2, extended): modes `[Hz, dB, decay, phase]`, a shared glide restarted per hit, a hit
+train (regular, or a measured `hits` table), and a band-passed click per hit. Sustain is exactly periodic: steady
+sparse tones on the loop grid, or one loop's hit pattern folded over the loop.
+
+**Analysis** (`gmfit/src/modal.rs`):
+- `onsets`: strike times and levels, re-levelled per hit (`relevel_hits`).
+- `partials`: prominent peaks of the first hit. The floor is the 20th percentile over ±max(150 Hz, 10 % f,
+  6 main lobes), so a tone's own sidebands don't hide it. Each peak gets its start level and decay from a
+  single-frequency tracker.
+- `glide`: instantaneous frequency of the band around the strongest partial. Accepted only if it settles steadily.
+- `sparse_loop`: prominent exact loop bins with phases.
+- `set_click`: click band from the residual's centroid, decay from the envelope fall after onsets, level from the
+  residual energy.
+- `add_residual`: an 8-band noise layer for what the modes leave out (sines plus noise).
+
+`analyze` builds these candidates for every wave and keeps the best score over the prior-based model. That
+makes the model choice automatic.
+
+**Score:** `d_per` (periodicity difference, weight 1) and flag `tone_off`. It separates noise from tone on sounds
+longer than a frame (guiro 0.20). It cannot help a 29 ms glide (196): at that length the original isn't
+periodic either.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

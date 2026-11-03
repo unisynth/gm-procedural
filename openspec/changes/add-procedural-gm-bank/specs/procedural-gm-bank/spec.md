@@ -191,6 +191,21 @@ The fitting tool SHALL score a generated wave against the original wave of the s
 - **WHEN** the same fit runs twice with the same seed and iteration count
 - **THEN** both runs produce identical parameters
 
+### Requirement: Character analysis and model choice
+`gmfit analyze` SHALL measure the struck character of the original (onsets, prominent partials with start level and decay, glide of the strongest partial, sparse loop bins), build `modal` candidates from these measurements (with a residual noise layer and a per-hit click where the modes leave energy out), and keep the best scoring of these candidates and the prior-based model. The score SHALL include the periodicity difference `d_per` and flag `tone_off` above 0.25.
+
+#### Scenario: Pure tones become modes
+- **WHEN** the original is a few decaying pure tones (a conga, a triangle)
+- **THEN** the chosen model is `modal` with modes within 1 % of the original's strongest peaks
+
+#### Scenario: Measured strike times
+- **WHEN** the original has two or more onsets (a guiro scrape)
+- **THEN** the `modal` layer carries a `hits` table with one row per measured onset (at most 32)
+
+#### Scenario: Periodic modal sustain
+- **WHEN** a `modal` layer renders the sustain region, steady or with a hit train
+- **THEN** rendering one loop length past the loop end reproduces the loop samples within 1e-5
+
 ### Requirement: Parameter sweep
 `gmfit sweep <wave> <param> <values>` SHALL render one variant per value and report each variant's score and flags with one contact sheet row per variant, without changing committed parameters.
 

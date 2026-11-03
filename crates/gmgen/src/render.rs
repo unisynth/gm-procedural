@@ -201,6 +201,7 @@ pub fn render(meta: &WaveMeta, p: &Params, seed: u32) -> Vec<f32> {
             "noise" => fam::noise::render(&ctx, layer, &mut buf),
             "drum" => fam::drum::render(&ctx, layer, &mut buf),
             "metal" => fam::metal::render(&ctx, layer, &mut buf),
+            "modal" => fam::modal::render(&ctx, layer, &mut buf),
             _ => {}
         }
         if let (Region::Attack, Some((s, _))) = (region, lp) {

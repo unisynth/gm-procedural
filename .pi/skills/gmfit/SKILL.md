@@ -88,6 +88,10 @@ Thresholds are provisional (add-wav-resynthesis design D5). Treat OFF as "listen
 | buzz in the middle/top | per-period peak/mean of the 2.5–10 kHz band (`score::buzz_band`); flag `buzz` | `phase_seed` (random upper phases) |
 | pattern in the difference map / no "air" | mid-gap floor (bins ≥ per/5 from every harmonic) per band, signed mean | `gap_noise` layer |
 | hiss / "shhh" | per-band periodicity (autocorrelation at one period): lower than the original = too much noise | `gap_noise` bands (periodicity-calibrated, design D4k) |
+| noise where the original is a few pure tones (congas, whistles, triangle, agogo, bells) | tonal share (energy in the 8 strongest peaks) and those peaks | `modal` modes (analyze `modal::partials`, design D4l) |
+| falling "pew" / chirp | glide (instantaneous frequency of the strongest partial) | `modal` `glide`/`glide_t` |
+| rattle, scrape (vibraslap, guiro), repeated chirps | onset count | `modal` `hits` table (measured strike times) + click |
+| cymbal/bell loop with the wrong peaks | strongest loop peaks | `modal` sustain: sparse loop bins + residual noise |
 | rumble | power below 0.7·f0 | noise `hp` |
 | too bright / dull top | 500 Hz-band levels 6–11 kHz | noise `lp`, harmonic tail |
 | attack click / wrong decay / cut at the end | level per 50 ms × band (`tf` grid); a one-shot's last 10 ms vs the original | `tf`, `env` (one-shot end point, design D4j), drum noise layer |

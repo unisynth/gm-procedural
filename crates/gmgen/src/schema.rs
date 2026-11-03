@@ -108,6 +108,22 @@ static METAL: [Scalar; 10] = [
     s("noise", 0.0, 1.0, 0.0),  // mix of white noise into the oscillator bank
 ];
 
+static MODAL: [Scalar; 18] = with_env![
+        s("level_db", -80.0, 24.0, 0.0),
+        s("glide", -4800.0, 4800.0, 0.0), // cents the modes start off their frequency at each hit
+        s("glide_t", 0.0005, 2.0, 0.02),
+        s("ha", 0.0, 0.05, 0.0002), // attack of each hit
+        s("hits", 0.0, 64.0, 1.0),
+        s("period", 0.002, 1.0, 0.05), // s between hits (sustain: snapped to loop / m)
+        s("hit_db", -24.0, 12.0, 0.0), // level change per hit
+        s("jitter", 0.0, 0.5, 0.0),
+        s("click_db", -80.0, 12.0, -80.0),
+        s("click_decay", 0.0002, 0.1, 0.003),
+        s("click_hp", 20.0, 10000.0, 1000.0),
+        s("click_lp", 100.0, 20000.0, 20000.0), // click band top (one-pole low-pass)
+        s("offset", 0.0, 1.0, 0.0), // sustain hit train: first hit after the loop start, in periods
+];
+
 pub const FAMILIES: &[Family] = &[
     // Harmonic table `harm` (dB per harmonic 1..K), optional `phase` (cycles, harmonics 1..P).
     Family {
@@ -133,6 +149,15 @@ pub const FAMILIES: &[Family] = &[
     Family { name: "drum", scalars: &DRUM, tables: &[Table { name: "modes", width: 3, max_rows: 3 }], periodic: false },
     // `ratios`: square oscillators at base × ratio (default TR-808 set when empty).
     Family { name: "metal", scalars: &METAL, tables: &[Table { name: "ratios", width: 1, max_rows: 6 }], periodic: false },
+    // `modes`: [Hz, dB, decay s, phase cycles] (absolute frequencies: unpitched percussion, bells, chirps).
+    // `hits`: measured strike times [s from the start (sustain: from the loop start), dB] — overrides the regular
+    // train (`hits`/`period`/`hit_db`/`jitter`/`offset`).
+    Family {
+        name: "modal",
+        scalars: &MODAL,
+        tables: &[Table { name: "modes", width: 4, max_rows: 32 }, Table { name: "hits", width: 2, max_rows: 32 }],
+        periodic: true,
+    },
 ];
 
 pub fn family(name: &str) -> Option<usize> {

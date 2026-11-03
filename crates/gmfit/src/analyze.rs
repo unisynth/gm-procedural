@@ -46,7 +46,7 @@ fn dft(x: &[f32]) -> (Vec<f32>, Vec<f32>) {
 }
 
 /// Mean power spectrum (Hann, 2048) of `x`, bins 0..=1024.
-fn avg_power(x: &[f32]) -> Vec<f32> {
+pub(crate) fn avg_power(x: &[f32]) -> Vec<f32> {
     let n = 2048;
     let fft = FftPlanner::<f32>::new().plan_fft_forward(n);
     let win: Vec<f32> = (0..n).map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / n as f32).cos()).collect();
@@ -69,7 +69,7 @@ fn avg_power(x: &[f32]) -> Vec<f32> {
 }
 
 /// 8 log-spaced bands `[centre, Q, gain dB]` from a power spectrum (bin width `rate / (2·(len−1))`).
-fn bands(power: &[f32], rate: f32) -> Vec<f32> {
+pub(crate) fn bands(power: &[f32], rate: f32) -> Vec<f32> {
     let nb = power.len() - 1;
     let hz = |b: usize| b as f32 * rate / (2.0 * nb as f32);
     let (lo, hi) = (120.0f32, rate * 0.45);
@@ -116,12 +116,13 @@ fn zero_cross_track(x: &[f32], rate: f32, lp: f32) -> Vec<(f32, f32)> {
 }
 
 /// Fit-relevant scalars made explicit (so `fit` tunes them) with their current values.
-fn open_for_fit(l: &mut Layer) {
+pub(crate) fn open_for_fit(l: &mut Layer) {
     let names: &[&str] = match gmgen::schema::FAMILIES[l.family].name {
         "additive" => &["level_db", "a", "h", "d", "s", "tilt", "tilt_t", "pdecay", "inharm"],
         "noise" => &["level_db", "a", "h", "d", "s", "hp", "lp"],
         "drum" => &["level_db", "freq", "ratio", "sweep_t", "decay", "a", "shape", "drive", "click_db", "click_decay"],
         "metal" => &["level_db", "base", "bp", "q", "hp", "a", "d", "d2", "split", "noise"],
+        "modal" => &["level_db", "ha", "glide", "glide_t", "period", "hit_db", "click_db", "click_decay", "click_hp"],
         _ => &[],
     };
     for n in names {
@@ -130,12 +131,12 @@ fn open_for_fit(l: &mut Layer) {
     }
 }
 
-fn rms(x: &[f32]) -> f32 {
+pub(crate) fn rms(x: &[f32]) -> f32 {
     (x.iter().map(|v| v * v).sum::<f32>() / x.len().max(1) as f32).sqrt()
 }
 
 /// Scales layer `k` so that, rendered alone, its RMS over `range` matches `target`.
-fn calibrate(i: usize, p: &mut Params, k: usize, target: f32, range: std::ops::Range<usize>) {
+pub(crate) fn calibrate(i: usize, p: &mut Params, k: usize, target: f32, range: std::ops::Range<usize>) {
     let mut solo = p.clone();
     solo.layers = vec![p.layers[k].clone()];
     let x = gmgen::render_wave(i, &solo);
@@ -735,7 +736,35 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
     gap_noise(i, orig, m, &mut p);
     pick_phase_seed(i, orig, m, &mut p);
     let _ = p.validate();
-    WaveFile { wave: i as u32, params: p, placeholder: false, note: format!("analyze: prior {:?}", prior.kind).chars().take(80).collect() }
+    let mut note = format!("analyze: prior {:?}", prior.kind);
+    // Model choice by score (design D4l): every wave also tries `modal` (struck, rattle, chirp, sparse loop).
+    let tonal = crate::modal::tonal_share(&orig[..orig.len().min((0.3 * rate) as usize)], rate);
+    {
+        let base = crate::fit::score_of(orig, i, &p);
+        let best = crate::modal::candidates(i, orig, m)
+            .into_iter()
+            .enumerate()
+            .map(|(c, mut q)| {
+                for l in &mut q.layers {
+                    open_for_fit(l);
+                }
+                if let Ok(dir) = std::env::var("GMFIT_MODAL_DUMP") {
+                    let wf = WaveFile { wave: i as u32, params: q.clone(), placeholder: false, note: String::new() };
+                    let _ = std::fs::write(format!("{dir}/modal-{i}-{c}.json"), gmgen::params_json::to_json(&wf));
+                }
+                let sc = crate::fit::score_of(orig, i, &q);
+                (sc, q)
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        if std::env::var_os("GMFIT_TRACE").is_some() {
+            eprintln!("modal: tonal {tonal:.2}, prior model {base:.4}, best modal {:?}", best.as_ref().map(|b| b.0));
+        }
+        if let Some((sc, q)) = best.filter(|b| b.0 > base) {
+            p = q;
+            note = format!("analyze: modal (tonal {tonal:.2}, {sc:.3} vs prior {base:.3})");
+        }
+    }
+    WaveFile { wave: i as u32, params: p, placeholder: false, note: note.chars().take(80).collect() }
 }
 
 /// Loop vibrato: pitch track of harmonic 1 over the loop (3 tiles, FFT band-pass 0.7–1.3·`est`, interpolated
@@ -953,7 +982,7 @@ fn string_attack(x: &[f32], rate: f32, s: usize, f0: f32) -> Option<Layer> {
 }
 
 /// A transient layer of family `f` from the wave's onset (`until` = end of the analysed part).
-fn attack_layer(f: &str, prior: &Prior, x: &[f32], rate: f32, region: Region, until: usize) -> Layer {
+pub(crate) fn attack_layer(f: &str, prior: &Prior, x: &[f32], rate: f32, region: Region, until: usize) -> Layer {
     let mut l = Layer::new(family(f).unwrap(), region);
     let seg = &x[..until.min(x.len())];
     let frame = (0.002 * rate) as usize;

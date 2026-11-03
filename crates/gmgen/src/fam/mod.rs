@@ -2,4 +2,5 @@
 pub mod additive;
 pub mod drum;
 pub mod metal;
+pub mod modal;
 pub mod noise;

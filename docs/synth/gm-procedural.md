@@ -143,7 +143,31 @@ Table `modes`: extra membrane modes `[ratio, gain dB, decay s]` (≤ 3), riding 
 Table `ratios`: square oscillators at `base × ratio` (≤ 6, PolyBLEP). When empty, the TR-808 set is used: 1, 1.4827,
 1.8003, 2.5460, 2.6303, 3.8967 (205.3 to 800 Hz).
 
-Further families (`ks`, `modal`, `formant`, `subtractive`, `shaker`, `fm`) arrive in task group 7.
+### `modal` (all regions; sustain exactly periodic)
+
+A resonator of up to 32 modes struck by a train of hits. Each hit restarts a shared pitch glide, a short attack
+and a band-passed noise click.
+
+| Parameter | Range | Default | Meaning |
+|---|---|---|---|
+| `a h d s dly` | | | shared envelope (as `noise`); a whole-region hit train starts at `dly` |
+| `level_db` | −80…24 | 0 | layer level |
+| `glide`, `glide_t` | ±4800 cents, s | 0, 0.02 | modes start `glide` cents off, relaxing with `glide_t` (restarts per hit) |
+| `ha` | 0…0.05 s | 0.0002 | attack of each hit |
+| `hits`, `period`, `hit_db`, `jitter`, `offset` | | 1, 0.05, 0, 0, 0 | regular train (when the `hits` table is empty) |
+| `click_db`, `click_decay`, `click_hp`, `click_lp` | dB, s, Hz, Hz | −80, 0.003, 1000, 20000 | noise burst per hit |
+
+Tables:
+- `modes`: `[Hz, dB, decay s, phase cycles]`, absolute frequencies.
+- `hits`: measured strikes `[s, dB]`, times from `dly` (sustain: from the loop start). These override the regular
+  train.
+
+In the sustain region, with at most one hit, the modes are steady tones on the loop grid with their stored phase
+at the loop start: a cymbal or belltree loop made of sparse peaks. With more hits, one loop's hit pattern
+(including the clicks) renders over enough loops for the tails and is folded into the loop. Both stay exactly
+periodic.
+
+Further families (`ks`, `formant`, `subtractive`, `shaker`, `fm`) arrive in task group 7.
 
 ## Commands
 
@@ -167,8 +191,9 @@ Both waves are "played": the attack, then the loop repeated to 0.5 s.
 | `d_onset` | the same, over the frames in the first 50 ms only (attacks and clicks) |
 | `d_env` | mean dB difference of RMS envelopes (window ≥ 2 periods and ≥ 10 ms, every 2 ms) over the attack. Over the loop: 100 ms-smoothed envelopes plus the difference in wobble depth (fine-envelope sd) |
 | `d_loop` | mean dB difference of the loop's exact DFT bins (DC excluded) |
+| `d_per` | periodicity difference: mean over 30 ms frames (first 300 ms) of the best normalised autocorrelation at 0.5–25 ms lags. Tone vs noise of the same spectrum (design D4l) |
 
-`score = exp(−(d_spec/12 + d_onset/12 + d_env/6 + d_loop/12))`. A-weighting and the onset term came from listening:
+`score = exp(−(d_spec/12 + d_onset/12 + d_env/6 + d_loop/12 + d_per))`; flag `tone_off` when `d_per` > 0.25. A-weighting and the onset term came from listening:
 the kick's missing click had cost almost nothing. Tiers: A ≥ 0.85, B ≥ 0.70, C below that; a `buzz`, `clipped`, `loop_click`, `silent` or `nan` flag means C. Flags: `silent`,
 `clipped`, `nan`, `env_off` (10 ms span > 6 dB off where the original is above −40 dB), `pitch_off` (autocorrelation
 f0 > 5 cents off, pitched waves only) and `loop_click`.

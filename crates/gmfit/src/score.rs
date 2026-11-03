@@ -21,6 +21,8 @@ pub const W_SPEC: f32 = 12.0;
 pub const W_ENV: f32 = 6.0;
 pub const W_LOOP: f32 = 12.0;
 pub const W_ONSET: f32 = 12.0;
+/// Periodicity difference (0–1): a pure tone vs narrow-band noise of the same spectrum (design D4l).
+pub const W_PER: f32 = 1.0;
 const FLOOR: f32 = -80.0;
 /// Dynamic range compared by `d_spec` (below the peak) and by `d_loop` (`LOOP_RANGE`).
 pub const SPEC_RANGE: f32 = 50.0;
@@ -35,6 +37,7 @@ pub struct Score {
     pub d_env: f32,
     pub d_loop: f32,
     pub d_onset: f32,
+    pub d_per: f32,
     pub flags: Vec<&'static str>,
     pub f0_orig: Option<f32>,
     pub f0_gen: Option<f32>,
@@ -43,7 +46,7 @@ pub struct Score {
 impl Score {
     pub fn json(&self) -> Value {
         json!({"score": r4(self.score), "d_spec": r4(self.d_spec), "d_env": r4(self.d_env), "d_loop": r4(self.d_loop), "d_onset": r4(self.d_onset),
-               "flags": self.flags, "f0_orig": self.f0_orig.map(r4), "f0_gen": self.f0_gen.map(r4)})
+               "d_per": r4(self.d_per), "flags": self.flags, "f0_orig": self.f0_orig.map(r4), "f0_gen": self.f0_gen.map(r4)})
     }
 }
 
@@ -355,7 +358,7 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     let (a, b) = (played(orig, m, PLAYED_SECS), played(synth, m, PLAYED_SECS));
     let mut flags = Vec::new();
     if synth.iter().any(|v| !v.is_finite()) {
-        return Score { score: 0.0, d_spec: 99.0, d_env: 99.0, d_loop: 99.0, d_onset: 99.0, flags: vec!["nan"], f0_orig: None, f0_gen: None };
+        return Score { score: 0.0, d_spec: 99.0, d_env: 99.0, d_loop: 99.0, d_onset: 99.0, d_per: 1.0, flags: vec!["nan"], f0_orig: None, f0_gen: None };
     }
     let win = min_window(m);
     let (ds, don) = d_spec(&a, &b, rate, win);
@@ -420,8 +423,51 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
             }
         }
     }
-    let score = (-(ds / W_SPEC + don / W_ONSET + de / W_ENV + dl / W_LOOP)).exp();
-    Score { score, d_spec: ds, d_env: de, d_loop: dl, d_onset: don, flags, f0_orig: fa, f0_gen: fb }
+    let dp = match (periodicity(&a, rate), periodicity(&b, rate)) {
+        (Some(x), Some(y)) => (x - y).abs(),
+        _ => 0.0,
+    };
+    if dp > 0.25 {
+        flags.push("tone_off");
+    }
+    let score = (-(ds / W_SPEC + don / W_ONSET + de / W_ENV + dl / W_LOOP + dp / W_PER)).exp();
+    Score { score, d_spec: ds, d_env: de, d_loop: dl, d_onset: don, d_per: dp, flags, f0_orig: fa, f0_gen: fb }
+}
+
+/// Periodicity (design D4l): mean over 30 ms frames (hop 15 ms, first 300 ms, frames within 30 dB of the loudest)
+/// of the highest normalised autocorrelation at lags 0.5–25 ms. ≈1 for a tone (gliding too), lower for noise.
+pub fn periodicity(x: &[f32], rate: f32) -> Option<f32> {
+    let n = (0.03 * rate) as usize;
+    let hop = n / 2;
+    let end = x.len().min((0.3 * rate) as usize);
+    if end < n {
+        return None;
+    }
+    let frames: Vec<usize> = (0..=(end - n)).step_by(hop).collect();
+    let en: Vec<f32> = frames.iter().map(|&a| x[a..a + n].iter().map(|v| v * v).sum()).collect();
+    let top = en.iter().copied().fold(0.0f32, f32::max);
+    if top < 1e-9 {
+        return None;
+    }
+    let nfft = (2 * n).next_power_of_two();
+    let mut planner = FftPlanner::<f32>::new();
+    let (fwd, inv) = (planner.plan_fft_forward(nfft), planner.plan_fft_inverse(nfft));
+    let (lo, hi) = (((0.0005 * rate) as usize).max(2), ((0.025 * rate) as usize).min(n - 1));
+    let mut vals = Vec::new();
+    for (&a, &e) in frames.iter().zip(&en) {
+        if e < top * 1e-3 {
+            continue;
+        }
+        let mut buf: Vec<Complex32> = (0..nfft).map(|k| Complex32::new(if k < n { x[a + k] } else { 0.0 }, 0.0)).collect();
+        fwd.process(&mut buf);
+        buf.iter_mut().for_each(|c| *c = Complex32::new(c.norm_sqr(), 0.0));
+        inv.process(&mut buf);
+        let r0 = buf[0].re.max(1e-20);
+        // Unbiased: divide each lag by its overlap so long lags are not penalised.
+        let best = (lo..=hi).map(|k| buf[k].re / r0 * n as f32 / (n - k) as f32).fold(f32::MIN, f32::max);
+        vals.push(best.clamp(0.0, 1.0));
+    }
+    (!vals.is_empty()).then(|| vals.iter().sum::<f32>() / vals.len() as f32)
 }
 
 #[cfg(test)]

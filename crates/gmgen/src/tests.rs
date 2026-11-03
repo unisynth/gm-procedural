@@ -230,3 +230,53 @@ mod pack_and_json {
         assert_eq!(dec, wf.params);
     }
 }
+
+/// `modal` (design D4l): mode frequency and decay land, a hit train repeats at its period, and both sustain modes
+/// (steady sparse tones, folded hit train) loop exactly.
+#[test]
+fn modal_modes_hits_and_loops() {
+    use crate::params::{Layer, Params};
+    use crate::render::WaveMeta;
+    use crate::schema::{family, Region};
+    let rate = 22050u32;
+    let one = WaveMeta { rate, len: 8820, unity: 60, fine: 0, looped: None };
+    let mut lay = Layer::new(family("modal").unwrap(), Region::Whole);
+    lay.tables[0] = std::vec![1000.0, 0.0, 0.1, 0.0];
+    lay.set("level_db", -6.0);
+    let mut p = Params::default();
+    p.layers.push(lay);
+    let x = render(&one, &p, 1);
+    // Frequency: zero crossings over 0.1–0.2 s → 1000 Hz within 0.5 %.
+    let seg = &x[2205..4410];
+    let zc = seg.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count() as f32 / 0.1;
+    assert!((zc - 1000.0).abs() < 5.0, "freq {zc}");
+    // Decay: RMS ratio between 0.1 s windows 0.1 s apart → e^{-1} within 5 %.
+    let rms = |a: usize| (x[a..a + 441].iter().map(|v| v * v).sum::<f32>() / 441.0).sqrt();
+    let r = rms(4410) / rms(2205);
+    assert!((r - (-1.0f32).exp()).abs() < 0.02, "decay ratio {r}");
+    // Hit train: 4 hits every 50 ms → envelope peaks at 0, 50, 100, 150 ms.
+    p.layers[0].tables[0] = std::vec![1000.0, 0.0, 0.01, 0.0];
+    p.layers[0].set("hits", 4.0);
+    p.layers[0].set("period", 0.05);
+    let y = render(&one, &p, 1);
+    for k in 0..4 {
+        let i = (k as f32 * 0.05 * rate as f32) as usize;
+        let e = |a: usize| y[a..a + 110].iter().map(|v| v.abs()).fold(0.0, f32::max);
+        assert!(e(i) > 4.0 * e(i + 800), "hit {k} not a fresh peak");
+    }
+    // Sustain loops exactly, steady and folded.
+    let looped = WaveMeta { rate, len: 3000, unity: 60, fine: 0, looped: Some((500, 1500)) };
+    for hits in [1.0, 3.0] {
+        let mut lay = Layer::new(family("modal").unwrap(), Region::Sustain);
+        lay.tables[0] = std::vec![2345.0, 0.0, 0.02, 0.25, 7777.0, -6.0, 0.01, 0.0];
+        lay.set("hits", hits);
+        lay.set("glide", 600.0);
+        let mut p = Params::default();
+        p.layers.push(lay);
+        let x = render(&looped, &p, 1);
+        assert!(x.iter().any(|v| v.abs() > 0.05), "silent (hits {hits})");
+        for i in 500..1500 {
+            assert!((x[i] - x[i + 1500]).abs() < 1e-5, "not periodic at {i} (hits {hits})");
+        }
+    }
+}
