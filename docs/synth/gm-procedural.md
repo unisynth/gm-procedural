@@ -63,7 +63,9 @@ number, with 0 dB beyond the table (fading over one harmonic).
 **Fine envelope `env`** (`tf.rs`, design D4d): dB gains at 24 fixed times (0, 0.5, 1, 2, 3, 4, 6, 8, 10, 13, 16,
 20, 25, 32, 40, 50, 64, 80, 100, 130, 170, 220, 300 and 400 ms). Only the points the attack needs are stored. The
 gain is a per-sample linear dB interpolation on the attack; on a looped wave it fades to 0 dB over the last 10 ms
-before the loop start. It applies after `tf`, so it catches onset detail finer than the 23 ms STFT.
+before the loop start. On a one-shot, a last point past the wave's end takes effect at the last sample
+(`env_db_end`; design D4j), so the original's end fade can be matched. `correct_env` measures that point on the
+last 5 ms. It applies after `tf`, so it catches onset detail finer than the 23 ms STFT.
 
 **Determinism.** `math.rs` provides `sin_cycles`, `exp2`, `log2`, `db`, `sqrt`, `floor` and an xorshift RNG. It uses
 only basic IEEE operations. `clippy.toml` bans `f32` transcendental functions and `mul_add` in the crate.

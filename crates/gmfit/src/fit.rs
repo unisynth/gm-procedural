@@ -357,13 +357,26 @@ pub fn correct_env(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     if n < 2 || attack == 0 {
         return (start.clone(), start_score);
     }
-    let mo = measure_env(&orig[..attack], rate, n);
+    // A one-shot's last point can lie past its end (the grid is fixed): its window would be empty and skipped, so
+    // the original's end fade was never matched (kick 376 ended at −32 dB against −54: a cut at the end). Measure
+    // that point on the last 5 ms of each signal instead.
+    let tail = ((0.005 * rate) as usize).clamp(1, attack);
+    let past_end = loop_of(&m).is_none() && ENV_TIMES[n - 1] * rate >= attack as f32;
+    let measure = |x: &[f32]| {
+        let mut v = measure_env(&x[..attack], rate, n);
+        if past_end {
+            let e: f32 = x[attack - tail..attack].iter().map(|v| v * v).sum::<f32>() / tail as f32;
+            v[n - 1] = 10.0 * e.max(1e-20).log10();
+        }
+        v
+    };
+    let mo = measure(orig);
     let top = mo.iter().copied().fold(f32::MIN, f32::max);
     let mut p = base;
     p.env = vec![0.0; n];
     let mut best = (start.clone(), start_score);
     for _ in 0..6 {
-        let mg = measure_env(&gmgen::render_wave(i, &p)[..attack], rate, n);
+        let mg = measure(&gmgen::render_wave(i, &p));
         for (k, e) in p.env.iter_mut().enumerate() {
             if mo[k] < top - 60.0 && mg[k] < top - 60.0 {
                 continue;
@@ -376,6 +389,20 @@ pub fn correct_env(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
         }
         if sc > best.1 {
             best = (p.clone(), sc);
+        }
+    }
+    // One-shot end: the score hardly sees the last milliseconds, so the best pass can still end too loud (a cut
+    // where the original has faded). Settle the last point alone; keep it unless the score drops by > 0.002.
+    if past_end {
+        let mut q = best.0.clone();
+        for _ in 0..6 {
+            let mg = measure(&gmgen::render_wave(i, &q));
+            let e = &mut q.env[n - 1];
+            *e = ((*e + (mo[n - 1] - mg[n - 1])).clamp(-48.0, 24.0) * 10.0).round() / 10.0;
+        }
+        let sq = score_of(orig, i, &q);
+        if sq + 0.002 >= best.1 {
+            best = (q, sq);
         }
     }
     best

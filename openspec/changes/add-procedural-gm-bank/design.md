@@ -295,6 +295,25 @@ h44 is within 1 dB. Score 0.8157 → 0.8122: `d_spec` and `d_onset` improve, whi
 0.29 → 0.38 (the noise adds ±0.5 dB inside the harmonic groups). This is within the regression gate and was
 written on listening feedback.
 
+### D4j. One-shot ends and the pilot checkpoint (round 9)
+Before asking for approval, the other pilot waves were refit with the current pipeline. Hat 0.651 → 0.718 and
+Piano 0.753 → 0.757; the kick, snare and bass refits scored lower and were not kept.
+
+The `gmfit` skill's measuring script (`.pi/skills/gmfit/measure.py`) then found the kick's round-3 "differs in the
+end": its last 12 ms ran at −32…−38 dB, where the original fades to −54 dB, and was then cut off. The env grid's
+last point (0.130 s) lay past the 0.112 s wave, so its window was empty and skipped.
+
+Two fixes:
+- **Generator:** on a one-shot, a last `env` point past the end takes effect at the last sample.
+- **`correct_env`:** it measures that point on the last 5 ms. After the best pass, it settles the last point
+  alone, and keeps the result unless the score drops by more than 0.002.
+
+The original one-shots end anywhere from −5.8 to −90 dB (median −37), so a fixed fade-out in the generator would
+be wrong.
+
+Result: the kick's last 5 ms match (−45.8/−45.8 dB), kick 0.6996 → 0.7091, and snare 0.6769 → **0.7408** (its
+end fade was unreachable too). Hat unchanged.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

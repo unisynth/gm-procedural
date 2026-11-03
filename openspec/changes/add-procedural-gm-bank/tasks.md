@@ -120,8 +120,13 @@ skip when `GM_DLS` is unset.
   also re-run at the end of `correct_all`. Strings 405: mid-gap floor matched, score 0.8157 → 0.8122.
 - [x] 6.2h Refit the other pilot waves with the current pipeline (keep if better): hat 0.651 → 0.718, Piano 293
   0.753 → 0.757; kick, snare and bass unchanged. No `buzz` flags; gap floors match (bass loop = 1 period).
-- [ ] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
+- [x] 6.2i One-shot env end (D4j): `tf::env_db_end` (last point past a one-shot's end sits at its end),
+  `correct_env` measures it on the last 5 ms and settles it. Test `one_shot_last_point_sits_at_the_end`. Kick
+  0.700 → 0.709 (end matched), snare 0.677 → 0.741.
+- [x] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
+  Done: `.pi/skills/gmfit/SKILL.md` + `measure.py` (the checks the score misses, with thresholds, n/a per wave
+  type). A fresh agent fit Organ 150 0.0101 → 0.9335 from the skill alone; its 12 gaps were fixed in the skill.
 
 ## 7. Remaining model families
 

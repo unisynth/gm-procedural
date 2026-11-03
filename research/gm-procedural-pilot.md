@@ -193,6 +193,20 @@ was kept only when it scored better.
 - **Snare:** a fresh analysis is worse than the committed refined snare. The refine history matters for drums
   (`env_off` on a fresh fit).
 
+## Round 9b: one-shot ends
+
+`measure.py` (skill) flagged the kick's attack grid at 99 ms as +16…+29 dB. The last 12 ms ran at −32…−38 dB
+where the original fades to −54, then were cut off at the wave's end. This is the round-3 "376 differs in the
+end". Cause: the env grid's last point lay past the 0.112 s wave, so it was never fitted. The original one-shots
+end at −5.8…−90 dB re peak (median −37, 15 of 56 above −30), so a fixed fade is wrong. The fix fits the end per
+wave (D4j).
+
+| wave | before | after |
+|---|---|---|
+| kick 376 | 0.6996 | 0.7091 (last 5 ms −45.8/−45.8 dB) |
+| snare 161 | 0.6769 | **0.7408** |
+| hat 83 | 0.7183 | 0.7191 |
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.

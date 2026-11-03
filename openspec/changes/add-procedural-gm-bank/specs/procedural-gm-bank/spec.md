@@ -81,11 +81,15 @@ A wave MAY carry one time × band correction table `tf` of dB gains (±24 dB) on
 - **THEN** after the harmonic table it sets each `tf` cell from the original − model band energy over the attack, over 4 passes, trims the harmonic table's tail if the budget needs room, and writes the result only if the score improves
 
 ### Requirement: Optional fine envelope correction
-A wave MAY carry an `env` table of dB gains at fixed onset times (design D4d), applied per sample to the attack after the `tf` table. A loop SHALL stay untouched, with the gains fading to 0 dB before the loop start. Its entries count toward the 512-number budget.
+A wave MAY carry an `env` table of dB gains at fixed onset times (design D4d), applied per sample to the attack after the `tf` table. A loop SHALL stay untouched, with the gains fading to 0 dB before the loop start. On a one-shot, a last point past the wave's end SHALL take effect at the last sample. Its entries count toward the 512-number budget.
 
 #### Scenario: Flat envelope gain lands
 - **WHEN** a looped wave gets an `env` table of -6 dB at every point after the first
 - **THEN** the RMS level around each point from 4 ms on drops by 6 ± 0.1 dB and the loop samples are unchanged
+
+#### Scenario: One-shot end fade
+- **WHEN** a 0.112 s one-shot has 20 `env` points (the last at 0.130 s) and the last is −20 dB
+- **THEN** the last sample is lowered by 20 dB and the level at 0.100 s is unchanged
 
 #### Scenario: Ensemble spread loops exactly
 - **WHEN** a looped `additive` sustain layer has `spread` 12 cents

@@ -173,28 +173,36 @@ pub fn apply(x: &mut [f32], lp: Option<(usize, usize)>, rate: f32, tf: &[f32]) {
 
 /// Gain (dB) of the `env` table at time `t` s: linear between points, held after the last.
 pub fn env_db(env: &[f32], t: f32) -> f32 {
+    env_db_end(env, t, f32::INFINITY)
+}
+
+/// [`env_db`] with the last point moved to `end` (s) when it lies past it: a one-shot's last point is its end.
+pub fn env_db_end(env: &[f32], t: f32, end: f32) -> f32 {
     let n = env.len().min(ENV_TIMES.len());
     if n == 0 {
         return 0.0;
     }
+    let time = |j: usize| if j == n - 1 && j > 0 && ENV_TIMES[j] > end && end > ENV_TIMES[j - 1] { end } else { ENV_TIMES[j] };
     let mut j = 0;
-    while j + 1 < n && ENV_TIMES[j + 1] <= t {
+    while j + 1 < n && time(j + 1) <= t {
         j += 1;
     }
     if j + 1 >= n {
         return env[n - 1];
     }
-    let w = (t - ENV_TIMES[j]) / (ENV_TIMES[j + 1] - ENV_TIMES[j]);
+    let w = (t - time(j)) / (time(j + 1) - time(j));
     env[j] + (env[j + 1] - env[j]) * w
 }
 
 /// Applies the fine envelope `env` (design D4d) in place: per-sample gain on the attack (whole unlooped wave). On a
-/// looped wave the gain fades to unity over the last 10 ms before the loop start; the loop is untouched.
+/// looped wave the gain fades to unity over the last 10 ms before the loop start; the loop is untouched. On a
+/// one-shot, a last point past the wave's end sits at its end (the original's end fade lies before that grid point).
 pub fn apply_env(x: &mut [f32], lp: Option<(usize, usize)>, rate: f32, env: &[f32]) {
     let end = lp.map_or(x.len(), |(s, _)| s);
     let f = ((0.01 * rate) as usize).max(1);
+    let te = if lp.is_none() { x.len().saturating_sub(1) as f32 / rate } else { f32::INFINITY };
     for (i, v) in x.iter_mut().enumerate().take(end) {
-        let mut g = env_db(env, i as f32 / rate);
+        let mut g = env_db_end(env, i as f32 / rate, te);
         if lp.is_some() {
             g *= ((end - i) as f32 / f as f32).min(1.0);
         }
@@ -261,6 +269,22 @@ mod tests {
             assert!((b[j] - a[j] + 6.0).abs() < 0.1, "point {j} moved {}", b[j] - a[j]);
         }
         assert_eq!(y[8000..], x[8000..]);
+    }
+
+    /// One-shot: a last point past the wave's end applies its full gain at the last sample (kick 376's end fade).
+    #[test]
+    fn one_shot_last_point_sits_at_the_end() {
+        let rate = 22050.0;
+        let len = (0.112 * rate) as usize; // ends between ENV_TIMES 0.100 and 0.130
+        let x = vec![0.5f32; len];
+        let mut env = [0.0f32; 20]; // last point (0.130 s) is past the end
+        env[19] = -20.0;
+        let mut y = x.clone();
+        apply_env(&mut y, None, rate, &env);
+        assert!((y[len - 1] / x[len - 1] - db(-20.0)).abs() < 1e-4, "end gain {}", to_db(y[len - 1] / x[len - 1]));
+        assert!((y[(0.100 * rate) as usize] - x[0]).abs() < 1e-3);
+        // looped waves keep the fixed grid
+        assert!((env_db(&env, 0.112) - (-20.0 * 12.0 / 30.0)).abs() < 1e-3);
     }
 
     #[test]
