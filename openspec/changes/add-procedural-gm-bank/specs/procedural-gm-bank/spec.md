@@ -69,6 +69,17 @@ A wave MAY carry one harmonic correction table: per-harmonic gains (dB, clamped 
 - **WHEN** a wave has no correction table
 - **THEN** its output equals the sum of its layers byte for byte
 
+### Requirement: Optional time × band correction
+A wave MAY carry one time × band correction table `tf` of dB gains (±24 dB) on a fixed grid of bands × time rows (design D4c). It SHALL shape the attack, or the whole unlooped wave, after the harmonic correction. A loop SHALL stay untouched, with the gains fading to 0 dB before the loop start. Its entries count toward the 256-number budget.
+
+#### Scenario: Band gain lands
+- **WHEN** a wave gets `tf` +6 dB on bands 8–12 and 0 dB elsewhere
+- **THEN** band 10's energy rises by 6 ± 1 dB, band 1 moves less than 0.5 dB, and the loop samples are unchanged
+
+#### Scenario: Analytic tf fit
+- **WHEN** `gmfit correct <wave>` runs
+- **THEN** after the harmonic table it sets each `tf` cell from the original − model band energy over the attack, over 4 passes, trims the harmonic table's tail if the budget needs room, and writes the result only if the score improves
+
 ### Requirement: Every wave is generated
 Every one of the 495 waves SHALL have a committed parameter set. A wave without parameters, or whose output is non-finite, silent or clipped, SHALL fail the generator's test suite rather than ship as silence.
 

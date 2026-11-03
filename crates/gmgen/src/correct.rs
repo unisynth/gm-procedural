@@ -36,7 +36,7 @@ pub fn gain_at(c: &[f32], h: f32) -> f32 {
 }
 
 /// Real DFT of `x` (O(L²), twiddles from one table).
-fn dft(x: &[f32]) -> (Vec<f32>, Vec<f32>) {
+pub(crate) fn dft(x: &[f32]) -> (Vec<f32>, Vec<f32>) {
     let l = x.len();
     let tw: Vec<(f32, f32)> = (0..l).map(|k| (cos_cycles(k as f32 / l as f32), sin_cycles(k as f32 / l as f32))).collect();
     let (mut re, mut im) = (vec![0.0f32; l], vec![0.0f32; l]);
@@ -61,7 +61,7 @@ fn dft(x: &[f32]) -> (Vec<f32>, Vec<f32>) {
     (re, im)
 }
 
-fn idft(re: &[f32], im: &[f32]) -> Vec<f32> {
+pub(crate) fn idft(re: &[f32], im: &[f32]) -> Vec<f32> {
     let l = re.len();
     let tw: Vec<(f32, f32)> = (0..l).map(|k| (cos_cycles(k as f32 / l as f32), sin_cycles(k as f32 / l as f32))).collect();
     (0..l)

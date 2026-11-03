@@ -1,5 +1,6 @@
 //! `gmfit fit` (CMA-ES over the explicit scalars, then harmonic-table refinement) and `gmfit correct` (analytic
-//! harmonic correction, design D4b). Both keep a result only when it scores higher than the starting point.
+//! harmonic correction, design D4b, then the time × band table `tf`, D4c). Each keeps a result only when it scores
+//! higher than its starting point.
 use crate::audio::loop_of;
 use crate::cmaes::minimize;
 use gmgen::params::Params;
@@ -243,8 +244,11 @@ pub fn correct(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     let (oh, gh): (Vec<f32>, Vec<f32>) = match loop_of(&m) {
         Some((s, l)) => {
             let per = periods(&m, &base, l);
+            // Cluster energy within ±per/2 bins of each harmonic (inharmonic and detuned partials sit beside k·per).
             let (om, gm) = (loop_mag(&orig[s..s + l]), loop_mag(&synth[s..s + l]));
-            (1..=(l / 2) / per).map(|k| (om[k * per], gm[k * per])).unzip()
+            let w = per / 2;
+            let e = |v: &[f32], k: usize| v[(k * per).saturating_sub(w).max(1)..=(k * per + w).min(v.len() - 1)].iter().map(|x| x * x).sum::<f32>().sqrt();
+            (1..=(l / 2) / per).map(|k| (e(&om, k), e(&gm, k))).unzip()
         }
         None => {
             let pw = |x: &[f32]| loop_mag(&x[..x.len().min(2048)]);
@@ -278,6 +282,50 @@ pub fn correct(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
         eprintln!("correct: {:?} → {sc} (from {start_score})", p.correction);
     }
     if sc > start_score { (p, sc) } else { (start.clone(), start_score) }
+}
+
+/// Analytic time × band correction (D4c) on top of `start` (its own `tf` replaced): each cell moves by the
+/// original − model band energy (dB, clamped ±24), 4 passes, best pass kept; cells more than 60 dB below the
+/// original's loudest cell in both stay 0. Rows cover the attack (`tf::rows_for`); room is made by trimming the
+/// harmonic correction's tail. Kept only if better than `start`.
+pub fn correct_tf(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
+    use gmgen::tf::{measure, rows_for, BANDS};
+    let m = gmgen::bank::meta(i).unwrap();
+    let rate = m.rate as f32;
+    let start_score = score_of(orig, i, start);
+    let mut base = start.clone();
+    base.tf.clear();
+    let attack = loop_of(&m).map_or(orig.len(), |(s, _)| s);
+    let rows = rows_for(attack as f32 / rate);
+    while base.numbers() + rows * BANDS > MAX_NUMBERS && !base.correction.is_empty() {
+        base.correction.pop();
+    }
+    let rows = rows.min((MAX_NUMBERS - base.numbers()) / BANDS);
+    if rows == 0 {
+        return (start.clone(), start_score);
+    }
+    let mo = measure(&orig[..attack], rate, rows);
+    let top = mo.iter().copied().fold(f32::MIN, f32::max);
+    let mut p = base;
+    p.tf = vec![0.0; rows * BANDS];
+    let mut best = (start.clone(), start_score);
+    for _ in 0..4 {
+        let mg = measure(&gmgen::render_wave(i, &p)[..attack], rate, rows);
+        for (k, t) in p.tf.iter_mut().enumerate() {
+            if mo[k] < top - 60.0 && mg[k] < top - 60.0 {
+                continue;
+            }
+            *t = ((*t + (mo[k] - mg[k])).clamp(-24.0, 24.0) * 10.0).round() / 10.0;
+        }
+        let sc = score_of(orig, i, &p);
+        if std::env::var_os("GMFIT_TRACE").is_some() {
+            eprintln!("correct_tf: {rows} rows → {sc}");
+        }
+        if sc > best.1 {
+            best = (p.clone(), sc);
+        }
+    }
+    best
 }
 
 #[cfg(test)]

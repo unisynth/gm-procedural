@@ -122,14 +122,15 @@ pub fn out_dir(i: usize) -> PathBuf {
     d
 }
 
-/// Renders `p` for wave `i` and scores it with and without the harmonic correction.
+/// Renders `p` for wave `i` and scores it with and without the corrections (harmonic and `tf`).
 pub fn evaluate(orig: &[f32], i: usize, p: &Params) -> (score::Score, Option<score::Score>, Vec<f32>) {
     let m = gmgen::bank::meta(i).expect("wave meta");
     let synth = gmgen::render_wave(i, p);
     let s = score::score(orig, &synth, &m);
-    let plain = (!p.correction.is_empty()).then(|| {
+    let plain = (!p.correction.is_empty() || !p.tf.is_empty()).then(|| {
         let mut q = p.clone();
         q.correction.clear();
+        q.tf.clear();
         score::score(orig, &gmgen::render_wave(i, &q), &m)
     });
     (s, plain, synth)

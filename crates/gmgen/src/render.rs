@@ -215,6 +215,9 @@ pub fn render(meta: &WaveMeta, p: &Params, seed: u32) -> Vec<f32> {
     if !p.correction.is_empty() {
         crate::correct::apply(&mut out, lp, f0(meta, p), rate, &p.correction);
     }
+    if !p.tf.is_empty() {
+        crate::tf::apply(&mut out, lp, rate, &p.tf);
+    }
     out.iter_mut().for_each(|x| *x = soft_knee(*x));
     out
 }

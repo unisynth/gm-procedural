@@ -46,6 +46,23 @@ Organ wave 151 scores 0.93.
 10. **Full-covariance CMA-ES.** The diagonal variant stalled on Rosenbrock, and level, decay and tilt are coupled.
 11. **Soft knee above 0.9 in the generator.** Fitted waves with the right spectrum but a peakier waveform clipped.
 
+## Round 2: correction tables (after listening feedback "not good")
+
+| wave | round 1 | harmonic + `tf` |
+|---|---|---|
+| 376 kick | 0.672 | 0.744 |
+| 161 snare | 0.446 | 0.696 |
+| 83 hat | 0.575 | 0.660 |
+| 240 Fingered Bass | 0.956 | 0.985 |
+| 405 Strings | 0.605 | 0.679 |
+| 293 Piano | 0.740 | 0.839 |
+
+- **`tf` time × band table** (20 bands × ≤ 9 rows, design D4c). It shapes the attack over time, which the static
+  harmonic table cannot.
+- **Harmonic table on cluster energy.** On a single bin, piano and string partials beside k·m looked missing
+  (−24 dB everywhere).
+- **What still limits the drums:** `d_env` around 1.5, from envelope detail between the `tf` rows.
+
 ## Open findings for the bulk fit
 
 - **Unpitched sampled percussion** (snare, hat) stays near 0.45–0.6. Remaining error: the high band above about

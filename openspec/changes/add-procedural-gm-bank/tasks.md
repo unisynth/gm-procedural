@@ -94,6 +94,9 @@ skip when `GM_DLS` is unset.
 - [ ] 6.2 Calibrate the score weights and tier thresholds against listening. Re-baseline `scores.json`. Show the
   pilot A/B to the user and get confirmation before the bulk fit. Verify the user approved and the weights are noted
   in the research file.
+- [x] 6.2a Pilot listening feedback ("not good"): add the time × band correction `tf` (D4c) in `gmgen/src/tf.rs`
+  (schema grid, params budget/validate/binary/JSON, render after the harmonic correction). `gmfit correct` now fits
+  harmonic (cluster energy) + `tf`. Tests: FFT round trip; flat table = identity; band gain lands; loop untouched.
 - [ ] 6.3 Write the `.pi/skills/gmfit/SKILL.md` skill (render → read sheet → change layers → fit → correct → A/B →
   commit; pitfalls from the pilot). Verify a fresh agent can fit one new wave by following only the skill.
 

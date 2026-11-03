@@ -52,6 +52,8 @@ pub struct Params {
     pub layers: Vec<Layer>,
     /// Harmonic correction, dB per harmonic 1..C (empty = none).
     pub correction: Vec<f32>,
+    /// Time × band correction (`tf`), rows of `tf::BANDS` dB gains (empty = none).
+    pub tf: Vec<f32>,
 }
 
 impl Default for Params {
@@ -61,6 +63,7 @@ impl Default for Params {
             wave_explicit: alloc::vec![false; WAVE.len()],
             layers: Vec::new(),
             correction: Vec::new(),
+            tf: Vec::new(),
         }
     }
 }
@@ -82,7 +85,7 @@ impl Params {
             .iter()
             .map(|l| l.explicit.iter().filter(|e| **e).count() + l.tables.iter().map(Vec::len).sum::<usize>())
             .sum();
-        w + l + self.correction.len()
+        w + l + self.correction.len() + self.tf.len()
     }
 
     /// Budget, table shape and range checks. The message names the offending part; callers prefix the wave.
@@ -101,6 +104,12 @@ impl Params {
             if !(s.min..=s.max).contains(v) {
                 return Err(format!("{} = {v} outside {}..{}", s.name, s.min, s.max));
             }
+        }
+        if !self.tf.len().is_multiple_of(crate::schema::TF_BANDS) || self.tf.len() / crate::schema::TF_BANDS > crate::schema::TF_TIMES.len() {
+            return Err(format!("tf needs ≤ {} rows of {}", crate::schema::TF_TIMES.len(), crate::schema::TF_BANDS));
+        }
+        if let Some(c) = self.tf.iter().find(|c| !(-24.0..=24.0).contains(*c)) {
+            return Err(format!("tf {c} dB outside -24..24"));
         }
         if let Some(c) = self.correction.iter().find(|c| !(-24.0..=24.0).contains(*c)) {
             return Err(format!("correction {c} dB outside -24..24"));
@@ -150,6 +159,8 @@ impl Params {
         }
         out.push(self.correction.len() as u8);
         f32s(out, &self.correction);
+        out.push((self.tf.len() / crate::schema::TF_BANDS) as u8);
+        f32s(out, &self.tf);
     }
 
     /// Reads one encoded parameter set from the front of `b`, returning it and the remaining bytes.
@@ -191,6 +202,8 @@ impl Params {
         }
         let n = r.u8()? as usize;
         let correction = r.f32s(n)?;
-        Some((Params { wave, wave_explicit, layers, correction }, r.0))
+        let rows = r.u8()? as usize;
+        let tf = r.f32s(rows * crate::schema::TF_BANDS)?;
+        Some((Params { wave, wave_explicit, layers, correction, tf }, r.0))
     }
 }

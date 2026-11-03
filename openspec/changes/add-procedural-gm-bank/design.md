@@ -131,6 +131,36 @@ empty, so no budget is spent twice.
   which costs twice the numbers. It also can't remove energy the model puts where the original has none, and a
   multiplicative gain can.
 
+### D4c. Optional time × band correction `tf` (per wave)
+The harmonic table is static, so it cannot follow brightness that changes over time (piano and snare attacks,
+hats) or unpitched drums. The second stage, `wave = tf(correct(Σ layers))`, is a grid of dB gains:
+- 20 log-spaced bands (centres 55 Hz · 1.315^b, up to about 10 kHz).
+- Up to 9 time rows (0, 5, 10, 20, 40, 80, 160, 320, 640 ms). Only the rows the attack needs are stored
+  (`rows_for`), at most 180 numbers.
+
+Gains interpolate linearly in time (held after the last row) and in log2 frequency (held outside the bands). They
+are applied through an STFT (N = 512, hop N/4, Hann analysis + synthesis, deterministic radix-2 FFT). On a looped
+wave only the attack is shaped, and the gains fade to unity over the last 10 ms before the loop start. The loop
+stays exact and periodic, and remains the harmonic table's job.
+
+`gmfit correct` fits the harmonic table first, then `tf`. It measures band energies on the same grid
+(`tf::measure`, frame power shared by the interpolation weights) for the original and the model attack. Each cell
+moves by the dB difference, over 4 passes, keeping the best. Cells more than 60 dB below the original's loudest cell
+stay 0. If the budget is short, the harmonic table's tail is trimmed first.
+
+*Measured (pilot):*
+
+| wave | before | after (harmonic + `tf`) |
+|---|---|---|
+| snare 161 | 0.45 | 0.70 |
+| kick 376 | 0.67 | 0.74 |
+| hat 83 | 0.57 | 0.66 |
+| Piano 293 | 0.74 | 0.84 |
+| Fingered Bass 240 | 0.956 | 0.985 |
+
+A 12-band grid scored up to 0.02 lower than 20 bands. The harmonic table now compares *cluster* energy (±m/2 bins
+around k·m). Single bins called inharmonic piano partials "missing" and set −24 dB.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

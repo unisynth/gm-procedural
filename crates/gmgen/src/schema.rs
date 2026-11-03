@@ -155,3 +155,9 @@ impl Region {
         [Region::Attack, Region::Sustain, Region::Whole].get(v as usize).copied()
     }
 }
+
+/// Time × band correction grid (`tf`, design D4c): band count and row times in seconds.
+pub const TF_BANDS: usize = 20;
+/// Ratio between neighbouring `tf` band centres (55 Hz · ratio^b, up to ~10 kHz).
+pub const TF_RATIO: f32 = 1.315;
+pub const TF_TIMES: [f32; 9] = [0.0, 0.005, 0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64];

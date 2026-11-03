@@ -26,7 +26,8 @@ flowchart LR
   ```json
   {"wave": 289, "gain_db": -3, "pitch": 36.1, "note": "…",
    "layers": [{"family": "additive", "region": "sustain", "p": {"d": 0.4}, "t": {"harm": [0, -6, -9]}}],
-   "correction": [0, 1.5, -2]}
+   "correction": [0, 1.5, -2],
+   "tf": [[0, 1.2, ...20 band gains], ...rows]}
   ```
 
   `placeholder: true` marks a file written by `gmfit placeholder`, which is not fitted yet.
@@ -45,13 +46,19 @@ flowchart LR
 | `whole` | Unlooped waves. On a looped wave it acts as `attack`. |
 
 Pitch: the wave-level `pitch` (MIDI) if given, otherwise the wave's unity note. The order of operations is: layers
-summed, then `gain_db`, then the optional harmonic correction, then 16-bit round-half-even. The seed is the wave
+summed, then `gain_db`, then the optional harmonic correction, then the optional `tf`, then a soft knee above 0.9, then 16-bit round-half-even. The seed is the wave
 index, so full builds, partial builds and `gmfit` all render a wave identically.
 
 **Harmonic correction** (`correct.rs`): dB gains at harmonics 1..C of f0, interpolated linearly in harmonic
 number, with 0 dB beyond the table (fading over one harmonic).
 - Loop: DFT, gain per bin, inverse DFT. The result is exact and stays periodic.
 - Attack: a linear-phase FIR through the same curve, spanning at least 4 periods (129–2049 taps).
+
+**Time × band correction `tf`** (`tf.rs`, design D4c): dB gains on 20 log-spaced bands (55 Hz · 1.315^b) × up to
+9 rows at 0, 5, 10, 20, 40, 80, 160, 320 and 640 ms. Gains interpolate linearly in time and log-frequency.
+- Applied by STFT (N 512, hop 128, Hann², own radix-2 FFT) to the attack, or to the whole unlooped wave.
+- On a looped wave the gains fade to 0 dB over the last 10 ms before the loop start, and the loop is untouched.
+- `tf::measure` gives band energies on the same grid, for the fit.
 
 **Determinism.** `math.rs` provides `sin_cycles`, `exp2`, `log2`, `db`, `sqrt`, `floor` and an xorshift RNG. It uses
 only basic IEEE operations. `clippy.toml` bans `f32` transcendental functions and `mul_add` in the crate.
@@ -176,7 +183,19 @@ vowels, Hammond footages, piano B, vibrato and scoop.
 
 **`gmfit correct <w>`**: the analytic harmonic correction `20·log10(|orig_k| / |model_k|)` at loop bins `k·m`
 (2048-point spectrum for unlooped waves), clamped to ±24 dB. Entries under 0.5 dB, or 80 dB below the strongest
-harmonic, become 0. The table is limited by the remaining budget, and kept only if better.
+harmonic, become 0. Harmonic levels are cluster energies (±m/2 bins around k·m), so inharmonic and detuned
+partials count. The table is limited by the remaining budget. `correct` then fits `tf`: each cell moves by
+original − model band energy over the attack, over 4 passes, keeping the best (the harmonic table's tail is trimmed
+if the budget needs room). The result is kept only if better.
+
+| Pilot, harmonic + `tf` | before | after |
+|---|---|---|
+| snare 161 | 0.45 | 0.70 |
+| kick 376 | 0.67 | 0.74 |
+| hat 83 | 0.57 | 0.66 |
+| Strings 405 | 0.60 | 0.68 |
+| Piano 293 | 0.74 | 0.84 |
+| Fingered Bass 240 | 0.956 | 0.985 |
 
 | Measured (pilot preparation) | Score |
 |---|---|
