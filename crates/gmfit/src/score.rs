@@ -486,8 +486,9 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     let dm = match strongest_partial(&a, rate).filter(|_| tonal) {
         Some(f) => match (modulation(&a, rate, f), modulation(&b, rate, f)) {
             (Some((am_a, fm_a, ra)), Some((am_b, fm_b, rb))) if fm_a < 300.0 => {
-                // Rate of the pitch movement too, when the original moves (a trill at the wrong speed).
-                let rate_term = if fm_a >= 20.0 && ra > 0.0 && rb > 0.0 { (rb / ra).log2().abs().min(1.0) } else { 0.0 };
+                // Rate of the pitch movement too, when the original really trills (≥ 50 cents; whistles 93–119):
+                // a steady tone's 15–25 cents of measurement wobble has a random rate (bass 240 lost 0.6 to it).
+                let rate_term = if fm_a >= 50.0 && ra > 0.0 && rb > 0.0 { (rb / ra).log2().abs().min(1.0) } else { 0.0 };
                 ((am_a - am_b).abs() / 6.0).min(1.0) + ((fm_a - fm_b).abs() / 100.0).min(1.0) + rate_term
             }
             _ => 0.0,

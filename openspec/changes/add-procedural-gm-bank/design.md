@@ -438,6 +438,11 @@ Each candidate gets its `tf`/`env` refitted before it is ranked. Result: Chinese
 0.61 → 0.70, both without flags; crash 106 and open hat 272 stay combs (noise 0.51/0.47, comb 0.60/0.58 with `lines`),
 pending listening. Tambourine/stream/bubble need many tiny transients: the `shaker` family (7.5).
 
+`d_mod` fix found on the way: its trill-rate part applied when the original moved ≥ 20 cents, but a steady tone
+reads 15–25 cents of measurement wobble at a random rate — Fingered Bass 240 had dropped 0.88 → 0.30 (`mod_off`)
+in drums pass 3 unnoticed (the baseline was rewritten). Now ≥ 50 cents (whistles 93–119): 240 → 0.82, 27 waves up,
+none down.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators
