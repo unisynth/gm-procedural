@@ -150,7 +150,10 @@ skip when `GM_DLS` is unset.
   `report --check`, `analyze::noise_loop` (third-octave noise sustain for wash loops; `noise` bands ≤ 24),
   `play_speed` for listening pages, `measure.py` descriptor rows. Cymbal 84 and brush 58 moved to noise loops.
 - [x] 7.5a Hearing-model difference (design D4p): `gmfit/src/hear.rs` (PEAQ/MPEG ear model, excitation-domain
-  added/missing with a noise-texture tolerance, flutter/swell), `gmfit hear <w> [-p f]` at bank speed.
+  added/missing with a noise-texture tolerance, flutter/swell; level distributions after a 150 ms aligned attack),
+  `gmfit hear <w> [-p f]` at bank speed; rank and fit objective − 0.5 × audible excess. Named drums: belltree 49 extra
+  0.11 → 0.03, stream 404 missing 0.15 → 0.09, brush 58 0.70 → 0.71, vibraslap 476 hears close; bird 50 and laughing
+  226 need the FM / formant families (7.6, 7.3), bubble 62 its 1.9 kHz ring.
 - [ ] 7.3 Add the `formant` family (pulse/saw source, ≤ 5 formants), with tests for formant peak positions. Check it
   on 2 choir/voice waves. Verify both score above their placeholder score.
 - [ ] 7.4 Add the `subtractive` family (2 oscillators, resonant filter with envelope), with tests for cutoff response.

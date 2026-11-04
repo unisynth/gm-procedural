@@ -501,11 +501,20 @@ interpolation mirrored content above the new band edge).
   frame-to-frame fluctuation (robust median over 100 ms), as a share of its loudness; located in bands that hold
   sound themselves (a loss spreads its excitation far upward at high level).
 - `flutter`/`moddiff` (PEAQ ModDiff on loudness^0.3) and `swell` (2–20 Hz share of the band envelopes).
+- Frame-aligned only over the first 150 ms (when the attack happens is heard); after it each band compares level
+  *distributions* (sorted levels paired by rank, tolerance 3 dB + 0.5 × fluctuation): a texture is heard by its
+  statistics, not by when each grain falls (McDermott & Simoncelli 2011). Frame-aligned, a reseeded shaker differed
+  from itself by up to 0.9 of the loudness (bubble 62: 0.35–0.45); by distribution, reseeds of every committed wave
+  stay under the floor (`examples/seedfloor.rs`) except the bird-as-shaker, whose loud events hang on its seed.
+
+Use: rank = score − 0.1 × character flags − 0.5 × audible excess (added + missing − 0.05, moddiff − 0.02, each ≥ 0);
+the fit objective (`score_of`) carries the same excess term. The excess is 0 on all seven approved pilot waves and on
+59 of the 100 fitted waves, so it only steers what a listener would hear as different (+1–31 ms per evaluation).
 
 Calibration: a same-texture independent noise (Gaussian shaped by the original's smoothed STFT, level-matched) gives
 added + missing ≤ 0.047 and moddiff ≤ 0.017 on the 13 named drums → thresholds 0.05 / 0.02. Tests: identical = 0,
 same-colour noises below the floor, a removed 8 kHz tone found as missing at 6.5–10.5 kHz, resample pitch/level.
-Findings on the named waves: bird 50 misses its loud chirp moments (45 %, 3.2–3.8 kHz at bank speed: steady where
+Findings on the named waves (frame-aligned version, before the distribution change): bird 50 misses its loud chirp moments (45 %, 3.2–3.8 kHz at bank speed: steady where
 the original bursts), laughing 226 misses 53 % at 7–8.4 kHz in 450–720 ms, bubble 62 sits ~15 % low (missing
 1.7–2.0 kHz, extra 1.5–1.7 kHz), stream 404 misses its top and is too loud at 0.55–0.65 kHz, belltree 49 has extra
 6–7.6 kHz in its first 200 ms, brush 58 and crash 106 lack the original's slow swell, 272/315 flutter more;
