@@ -1,4 +1,4 @@
-//! `noise`: white noise through up to 8 band-pass bands (centre, Q, gain dB) — or flat when no band is given —
+//! `noise`: white noise through up to 24 band-pass bands (centre, Q, gain dB) — or flat when no band is given —
 //! then high-pass `hp` and low-pass `lp`, enveloped and optionally amplitude-modulated.
 //! Sustain region: one loop-length noise pattern filtered circularly (two warm-up passes) and tiled, so the
 //! wave is exactly periodic over the loop; `sweep` is ignored there. Transient: free noise, band centres moving

@@ -287,4 +287,25 @@ for t0 in range(0, int(0.3 * sr), int(0.05 * sr)):
             off_cells.append(f"{t0 * 1000 // sr}ms/{lo}-{int(hi)}Hz {lg - lo_:+.0f}")
 rows.append(f"attack grid (±3 dB)      {'OK ' if not off_cells else 'OFF'}  " + ("" if not off_cells else "tf / env: " + ", ".join(off_cells[:8])))
 
+# Character descriptors (gmfit render → report.json `desc`, design D4n; same thresholds as the flags).
+try:
+    d = json.load(open(f"build/gm/{w:03d}/report.json")).get("desc")
+except OSError:
+    d = None
+if d:
+    c = d["contrast"]
+    co = d.get("contrast_orig", 0.0)
+    if co > 18:
+        rows.append(f"fine contrast gen-orig    n/a  original is lines ({co:.0f} dB), not a wash")
+    else:
+        rows.append(f"fine contrast gen-orig    {'OK ' if c < 6 else 'OFF'}  {c:+.1f} dB (orig {co:.0f} dB)  "
+                    + ("" if c < 6 else "lines where the original is a wash → noise sustain (analyze::noise_loop)"))
+    po, pg = d["perc"]
+    row("percussive share", f"{po:.2f}", f"{pg:.2f}", abs(pg - po) < 0.2, "original made of micro-transients → shaker/hits (7.5)" if po > pg else "too clicky: fewer hits / smoother noise")
+    ko, kg = d["peaks"]
+    r = (kg + 1) / (ko + 1)
+    row("peaks per frame", f"{ko:.0f}", f"{kg:.0f}", 1 / 1.6 < r < 1.6, "modes smeared → fewer, cleaner modes" if r > 1 else "missing partials")
+else:
+    rows.append("character descriptors    n/a (run gmfit render first)")
+
 print("\n".join(rows))

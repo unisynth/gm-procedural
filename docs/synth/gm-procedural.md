@@ -113,7 +113,8 @@ Partials above 0.45·rate or below −100 dB are culled. Amplitudes run at a 32-
 | `sweep`, `sweep_t` | ±4 oct, 0.001…5 | 0, 0.05 | band centres move at onset (transient only) |
 | `am_rate`, `am_depth` | 0…40, 0…1 | 0, 0 | amplitude modulation (rate snapped to the loop grid) |
 
-Table `bands`: `[centre Hz, Q, gain dB]` (≤ 8). Without bands the noise is white.
+Table `bands`: `[centre Hz, Q, gain dB]` band-passes summed in parallel (≤ 24; a cymbal wash loop uses 20 third
+octaves, design D4n). Without bands the noise is white.
 - Sustain: a loop-length noise pattern, filtered circularly (three passes) and tiled.
 - Transient: free noise.
 
@@ -200,6 +201,11 @@ Both waves are "played": the attack, then the loop repeated to 0.5 s.
 the kick's missing click had cost almost nothing. Tiers: A ≥ 0.85, B ≥ 0.70, C below that; a `buzz`, `clipped`, `loop_click`, `silent` or `nan` flag means C. Flags: `silent`,
 `clipped`, `nan`, `env_off` (10 ms span > 6 dB off where the original is above −40 dB), `pitch_off` (autocorrelation
 f0 > 5 cents off, pitched waves only) and `loop_click`.
+
+Character descriptors (design D4n, `desc.rs`, not scored; `evaluate`/`render` add them as `desc` and flags):
+`lines` (fine spectral contrast ≥ 6 dB above an original that is a noise wash: a comb where a cymbal is noise),
+`transient_off` (percussive share off by ≥ 0.2: jingles, bubbles), `peaks_off` (peaks per frame off by ≥ 1.6×).
+Versions of a wave are compared by rank = score − 0.05 per character flag (`keep_if_better`, `report --check`).
 
 Playback speed: `gmfit render` writes `play: {key, speed, by}` into `report.json`. Speed = 2^((key − unity)/12 +
 fine/1200), using the region's own unity/fine and the key the bank triggers the wave from. That key is the drum

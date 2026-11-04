@@ -45,12 +45,58 @@ pub struct Score {
     pub flags: Vec<&'static str>,
     pub f0_orig: Option<f32>,
     pub f0_gen: Option<f32>,
+    /// Character descriptors (`describe`, design D4n): fine contrast gen − orig (dB), percussive share
+    /// (orig, gen), peaks per frame (orig, gen). Reported and flagged, not scored.
+    pub desc: Option<Desc>,
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct Desc {
+    pub contrast_orig: f32,
+    pub contrast: f32,
+    pub perc: (f32, f32),
+    pub peaks: (f32, f32),
+}
+
+/// Thresholds of the character flags, set on the drum descriptor study (design D4n).
+pub const LINES_DB: f32 = 6.0;
+pub const PERC_DIFF: f32 = 0.2;
+pub const PEAKS_RATIO: f32 = 1.6;
 
 impl Score {
     pub fn json(&self) -> Value {
         json!({"score": r4(self.score), "d_spec": r4(self.d_spec), "d_env": r4(self.d_env), "d_loop": r4(self.d_loop), "d_onset": r4(self.d_onset),
-               "d_per": r4(self.d_per), "d_mod": r4(self.d_mod), "flags": self.flags, "f0_orig": self.f0_orig.map(r4), "f0_gen": self.f0_gen.map(r4)})
+               "d_per": r4(self.d_per), "d_mod": r4(self.d_mod), "flags": self.flags, "f0_orig": self.f0_orig.map(r4), "f0_gen": self.f0_gen.map(r4),
+               "desc": self.desc.map(|d| json!({"contrast_orig": r4(d.contrast_orig), "contrast": r4(d.contrast), "perc": [r4(d.perc.0), r4(d.perc.1)], "peaks": [r4(d.peaks.0), r4(d.peaks.1)]}))})
+    }
+
+    /// Adds the character descriptors over the first second played, with their flags: `lines` (copy ≥ 6 dB
+    /// peakier where the original is a wash, ≤ `desc::WASH_DB`: a comb for a noise), `transient_off` (percussive share
+    /// off by ≥ 0.2), `peaks_off` (peaks per frame off by ≥ 1.6×). Too slow for the fit loop.
+    pub fn describe(&mut self, orig: &[f32], synth: &[f32], m: &WaveMeta) {
+        if self.flags.contains(&"nan") {
+            return;
+        }
+        let (a, b) = (played(orig, m, 1.0), played(synth, m, 1.0));
+        let rate = m.rate as f32;
+        let (co, cd) = crate::desc::contrast_pair(&a, &b, rate);
+        let d = Desc {
+            contrast_orig: co,
+            contrast: cd,
+            perc: (crate::desc::percussive_share(&a), crate::desc::percussive_share(&b)),
+            peaks: (crate::desc::peaks_per_frame(&a), crate::desc::peaks_per_frame(&b)),
+        };
+        if d.contrast >= LINES_DB && d.contrast_orig <= crate::desc::WASH_DB {
+            self.flags.push("lines");
+        }
+        if (d.perc.0 - d.perc.1).abs() >= PERC_DIFF {
+            self.flags.push("transient_off");
+        }
+        let r = (d.peaks.1 + 1.0) / (d.peaks.0 + 1.0);
+        if r >= PEAKS_RATIO || r <= 1.0 / PEAKS_RATIO {
+            self.flags.push("peaks_off");
+        }
+        self.desc = Some(d);
     }
 }
 
@@ -362,7 +408,7 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     let (a, b) = (played(orig, m, PLAYED_SECS), played(synth, m, PLAYED_SECS));
     let mut flags = Vec::new();
     if synth.iter().any(|v| !v.is_finite()) {
-        return Score { score: 0.0, d_spec: 99.0, d_env: 99.0, d_loop: 99.0, d_onset: 99.0, d_per: 1.0, d_mod: 1.0, flags: vec!["nan"], f0_orig: None, f0_gen: None };
+        return Score { score: 0.0, d_spec: 99.0, d_env: 99.0, d_loop: 99.0, d_onset: 99.0, d_per: 1.0, d_mod: 1.0, flags: vec!["nan"], f0_orig: None, f0_gen: None, desc: None };
     }
     let win = min_window(m);
     let (ds, don) = d_spec(&a, &b, rate, win);
@@ -452,7 +498,7 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
         flags.push("mod_off");
     }
     let score = (-(ds / W_SPEC + don / W_ONSET + de / W_ENV + dl / W_LOOP + dp / W_PER + dm / W_MOD)).exp();
-    Score { score, d_spec: ds, d_env: de, d_loop: dl, d_onset: don, d_per: dp, d_mod: dm, flags, f0_orig: fa, f0_gen: fb }
+    Score { score, d_spec: ds, d_env: de, d_loop: dl, d_onset: don, d_per: dp, d_mod: dm, flags, f0_orig: fa, f0_gen: fb, desc: None }
 }
 
 /// Strongest spectral peak (Hz, 100 Hz – 0.45·rate) of the first 300 ms.

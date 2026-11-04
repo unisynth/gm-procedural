@@ -70,21 +70,26 @@ pub(crate) fn avg_power(x: &[f32]) -> Vec<f32> {
 
 /// 8 log-spaced bands `[centre, Q, gain dB]` from a power spectrum (bin width `rate / (2·(len−1))`).
 pub(crate) fn bands(power: &[f32], rate: f32) -> Vec<f32> {
+    bands_n(power, rate, 8, 1.8)
+}
+
+/// `n` log-spaced bands 120 Hz – 0.45·rate with band-pass `q`, gains re the strongest band (≥ −60 dB).
+pub(crate) fn bands_n(power: &[f32], rate: f32, n: usize, q: f32) -> Vec<f32> {
     let nb = power.len() - 1;
     let hz = |b: usize| b as f32 * rate / (2.0 * nb as f32);
     let (lo, hi) = (120.0f32, rate * 0.45);
-    let edges: Vec<f32> = (0..=8).map(|k| lo * (hi / lo).powf(k as f32 / 8.0)).collect();
+    let edges: Vec<f32> = (0..=n).map(|k| lo * (hi / lo).powf(k as f32 / n as f32)).collect();
     let mut out = Vec::new();
     let mut gains = Vec::new();
-    for k in 0..8 {
+    for k in 0..n {
         let e: f32 = (0..=nb).filter(|&b| hz(b) >= edges[k] && hz(b) < edges[k + 1]).map(|b| power[b]).sum::<f32>()
             / (edges[k + 1] - edges[k]);
         gains.push(10.0 * e.max(1e-20).log10());
     }
     let top = gains.iter().copied().fold(f32::MIN, f32::max);
-    for k in 0..8 {
+    for k in 0..n {
         let c = (edges[k] * edges[k + 1]).sqrt();
-        out.extend([c, 1.8, (gains[k] - top).max(-60.0)]);
+        out.extend([c, q, (gains[k] - top).max(-60.0)]);
     }
     out
 }
@@ -362,6 +367,149 @@ pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
             true
         }
         _ => false,
+    }
+}
+
+/// Noise loop (design D4n): a loop that is a noise wash (cymbal, brush: fine contrast ≤ `desc::WASH_DB`) but
+/// modelled by an additive comb (copy ≥ `LINES_DB` peakier, flag `lines`) gets a loop-length `noise` sustain that
+/// fills every loop bin the way the original does. A real cymbal loop sits between noise and comb (dense ringing
+/// partials), so the comb is kept at 0 / −6 / −12 / −18 dB or dropped, and the noise fills the rest: bands from
+/// the loop's power spectrum, then 3 passes moving each band by the original/model band energy ratio and setting
+/// the noise level so comb + noise = the loop's energy. Returns the candidates (the caller keeps the best by
+/// rank, `crate::rank`); empty when the wave does not qualify.
+pub fn noise_loop(i: usize, orig: &[f32], m: &WaveMeta, p: &Params) -> Vec<Params> {
+    let Some((s, l)) = loop_of(m) else { return vec![] };
+    let is = |x: &Layer, f: &str| FAMILIES[x.family].name == f && x.region == Region::Sustain;
+    let Some(k) = p.layers.iter().position(|x| is(x, "additive")) else { return vec![] };
+    if l < 512 {
+        return vec![];
+    }
+    let rate = m.rate as f32;
+    let tile = |x: &[f32]| -> Vec<f32> { x[s..s + l].iter().cycle().take(l.max(3 * 8192)).copied().collect() };
+    let lo = tile(orig);
+    let (c_orig, c_diff) = crate::desc::contrast_pair(&lo, &tile(&gmgen::render_wave(i, p)), rate);
+    if c_orig > crate::desc::WASH_DB || c_diff < crate::score::LINES_DB {
+        return vec![];
+    }
+    let (mo, _) = dft(&orig[s..s + l]);
+    let po: Vec<f32> = mo.iter().map(|v| v * v).collect();
+    // Third octaves: 8 bands cannot follow a cymbal's resonances (the comb's cluster levels can, and win).
+    const NB: usize = 20;
+    let (blo, bhi) = (120.0f32, rate * 0.45);
+    let edges: Vec<f32> = (0..=NB).map(|j| blo * (bhi / blo).powf(j as f32 / NB as f32)).collect();
+    let hz = |b: usize| b as f32 * rate / l as f32;
+    let band_e = |x: &[f32]| -> Vec<f32> {
+        (0..NB).map(|j| x.iter().enumerate().filter(|(b, _)| hz(*b) >= edges[j] && hz(*b) < edges[j + 1]).map(|(_, v)| v).sum::<f32>()).collect()
+    };
+    let eo = band_e(&po);
+    // Loop energy (Σ a² over bins; `dft` gives amplitudes) of a layer rendered alone.
+    let solo_e = |q: &Params, n: usize| -> f32 {
+        let mut solo = q.clone();
+        solo.layers = vec![q.layers[n].clone()];
+        let (ms, _) = dft(&gmgen::render_wave(i, &solo)[s..s + l]);
+        ms.iter().skip(1).map(|v| v * v).sum()
+    };
+    let total_o: f32 = po.iter().skip(1).sum();
+    let mut out = Vec::new();
+    for keep in [None, Some(0.0f32), Some(-6.0), Some(-12.0), Some(-18.0)] {
+        let mut q = p.clone();
+        let a = q.layers[k].get("a");
+        let dly = q.layers[k].try_get("dly").unwrap_or(0.0);
+        q.layers.retain(|x| !is(x, "noise"));
+        let mut kk = q.layers.iter().position(|x| is(x, "additive")).unwrap();
+        match keep {
+            None => {
+                q.layers.remove(kk);
+                kk = usize::MAX;
+            }
+            Some(g) => {
+                let v = q.layers[kk].get("level_db");
+                q.layers[kk].set("level_db", (v + g).clamp(-80.0, 24.0));
+            }
+        }
+        if q.layers.len() >= gmgen::schema::MAX_LAYERS {
+            continue;
+        }
+        let comb_e = if kk == usize::MAX { 0.0 } else { solo_e(&q, kk) };
+        if comb_e >= 0.9 * total_o {
+            continue;
+        }
+        let mut nz = Layer::new(family("noise").unwrap(), Region::Sustain);
+        nz.tables[0] = bands_n(&po, rate, NB, 4.3);
+        nz.set("a", a);
+        if dly > 0.0 {
+            nz.set("dly", dly);
+        }
+        // Band skirts leak where the original is silent: high-pass at the first band within 40 dB of the
+        // strongest, low-pass at the top edge (a hat loop rolls off sharply near 0.45·rate).
+        let top_e = eo.iter().copied().fold(0.0f32, f32::max);
+        let first = eo.iter().position(|&e| e > top_e * 1e-4).unwrap_or(0);
+        nz.set("hp", edges[first]);
+        nz.set("lp", edges[NB]);
+        nz.set("level_db", -12.0);
+        q.layers.push(nz);
+        let n = q.layers.len() - 1;
+        let set_level = |q: &mut Params| {
+            let en = solo_e(q, n);
+            if en > 1e-20 {
+                let v = q.layers[n].get("level_db");
+                q.layers[n].set("level_db", (v + 10.0 * ((total_o - comb_e).max(1e-20) / en).log10()).clamp(-80.0, 24.0));
+            }
+        };
+        set_level(&mut q);
+        for _ in 0..3 {
+            let (mq, _) = dft(&gmgen::render_wave(i, &q)[s..s + l]);
+            let eq = band_e(&mq.iter().map(|v| v * v).collect::<Vec<_>>());
+            let t = &mut q.layers[n].tables[0];
+            for j in 0..NB {
+                if eo[j] > 0.0 && eq[j] > 0.0 {
+                    t[3 * j + 2] = (t[3 * j + 2] + (10.0 * (eo[j] / eq[j]).log10()).clamp(-12.0, 12.0)).clamp(-60.0, 24.0);
+                }
+            }
+            // Shape only (level is `level_db`): strongest band at 0 dB.
+            let top = (0..NB).map(|j| t[3 * j + 2]).fold(f32::MIN, f32::max);
+            for j in 0..NB {
+                t[3 * j + 2] = (t[3 * j + 2] - top).max(-60.0);
+            }
+            set_level(&mut q);
+        }
+        if q.validate().is_ok() {
+            out.push(q);
+        }
+    }
+    out
+}
+
+/// Keeps the best-ranked of `p` and its `noise_loop` candidates (rank: score − 0.05 per character flag), each
+/// ranked after its attack tables (`tf`, `env`) are refitted — `p` usually has tuned tables, a fresh candidate not.
+/// Returns whether `p` changed.
+pub fn pick_noise_loop(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
+    let cands = noise_loop(i, orig, m, p);
+    if cands.is_empty() {
+        return false;
+    }
+    let mut best = (crate::rank_of(orig, i, p), None);
+    for (j, q) in cands.into_iter().enumerate() {
+        let (q, _) = crate::fit::correct_tf(orig, i, &q);
+        let (q, _) = crate::fit::correct_env(orig, i, &q);
+        let r = crate::rank_of(orig, i, &q);
+        if std::env::var_os("GMFIT_TRACE").is_some() {
+            eprintln!("noise_loop cand {j}: rank {r} (current {})", best.0);
+        }
+        if let Ok(path) = std::env::var("GMFIT_DUMP") {
+            let wf = WaveFile { wave: i as u32, params: q.clone(), placeholder: false, note: String::new() };
+            let _ = std::fs::write(format!("{path}.{j}"), gmgen::params_json::to_json(&wf));
+        }
+        if r > best.0 {
+            best = (r, Some(q));
+        }
+    }
+    match best.1 {
+        Some(q) => {
+            *p = q;
+            true
+        }
+        None => false,
     }
 }
 
@@ -735,6 +883,7 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
     }
     gap_noise(i, orig, m, &mut p);
     pick_phase_seed(i, orig, m, &mut p);
+    pick_noise_loop(i, orig, m, &mut p);
     let _ = p.validate();
     let mut note = format!("analyze: prior {:?}", prior.kind);
     // Model choice by score (design D4l): every wave also tries `modal` (struck, rattle, chirp, sparse loop).

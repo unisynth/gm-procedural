@@ -44,6 +44,7 @@ pub fn placeholder(wave: u32, m: &gmgen::render::WaveMeta) -> gmgen::params_json
 pub mod analyze;
 pub mod audio;
 pub mod cmaes;
+pub mod desc;
 pub mod fit;
 pub mod modal;
 pub mod wavelet;
@@ -155,7 +156,8 @@ pub fn out_dir(i: usize) -> PathBuf {
 pub fn evaluate(orig: &[f32], i: usize, p: &Params) -> (score::Score, Option<score::Score>, Vec<f32>) {
     let m = gmgen::bank::meta(i).expect("wave meta");
     let synth = gmgen::render_wave(i, p);
-    let s = score::score(orig, &synth, &m);
+    let mut s = score::score(orig, &synth, &m);
+    s.describe(orig, &synth, &m);
     let plain = (!p.correction.is_empty() || !p.tf.is_empty() || !p.env.is_empty()).then(|| {
         let mut q = p.clone();
         q.correction.clear();
@@ -236,12 +238,35 @@ pub fn set_param(p: &mut Params, path: &str, v: f32) -> Result<(), String> {
     p.validate()
 }
 
-/// Waves whose new score is more than 0.005 below the committed one (`report --check`).
+/// Character flags (design D4n) and the score cost of each when choosing between versions of a wave.
+pub const CHAR_FLAGS: [&str; 3] = ["lines", "transient_off", "peaks_off"];
+pub const CHAR_PENALTY: f32 = 0.05;
+
+/// Rank of a scored version: score − `CHAR_PENALTY` per character flag. A version that clears a character defect
+/// wins over one that scores up to 0.05 higher but keeps it (the frame score rewards a comb that matches the loop
+/// bins over the noise wash it replaces). Needs `Score::describe` (`evaluate` does it).
+pub fn rank(s: &score::Score) -> f32 {
+    s.score - CHAR_PENALTY * s.flags.iter().filter(|f| CHAR_FLAGS.contains(f)).count() as f32
+}
+
+/// Same from a score JSON object (`scores.json` row).
+pub fn rank_json(v: &Value) -> Option<f32> {
+    let n = v["flags"].as_array().map_or(0, |a| a.iter().filter(|f| f.as_str().is_some_and(|f| CHAR_FLAGS.contains(&f))).count());
+    Some(v["score"].as_f64()? as f32 - CHAR_PENALTY * n as f32)
+}
+
+/// `rank` of parameters `p` for wave `i` (renders, scores, describes).
+pub fn rank_of(orig: &[f32], i: usize, p: &Params) -> f32 {
+    rank(&evaluate(orig, i, p).0)
+}
+
+/// Waves whose new rank (`rank_json`: score − 0.05 per character flag) is more than 0.005 below the committed one
+/// (`report --check`).
 pub fn regressions(committed: &serde_json::Map<String, Value>, new: &serde_json::Map<String, Value>) -> Vec<String> {
     let mut out: Vec<(usize, String)> = new
         .iter()
         .filter_map(|(k, v)| {
-            let (old, now) = (committed.get(k)?["score"].as_f64()?, v["score"].as_f64()?);
+            let (old, now) = (rank_json(committed.get(k)?)?, rank_json(v)?);
             (now < old - 0.005).then(|| (k.parse().unwrap_or(0), format!("wave {k}: {old:.4} → {now:.4}")))
         })
         .collect();
@@ -249,15 +274,19 @@ pub fn regressions(committed: &serde_json::Map<String, Value>, new: &serde_json:
     out.into_iter().map(|x| x.1).collect()
 }
 
-/// Writes `wf` for wave `i` when `score` beats the committed score (scores.json, else the current file's), and
-/// records the new score. Returns whether it was written.
-pub fn keep_if_better(orig: &Orig, i: usize, mut wf: WaveFile, score: f32) -> Result<bool, String> {
+/// Writes `wf` for wave `i` when its rank (score − 0.05 per character flag) beats the committed one (scores.json
+/// when it has the descriptors, else the current file's), and records the new score. `_score` (the caller's plain
+/// score) is not trusted: the version is re-evaluated with descriptors. Returns whether it was written.
+pub fn keep_if_better(orig: &Orig, i: usize, mut wf: WaveFile, _score: f32) -> Result<bool, String> {
     let mut scores = load_scores();
-    let old = match scores.get(&i.to_string()).and_then(|v| v["score"].as_f64()) {
-        Some(s) => s as f32,
-        None => load_wave(i).map(|w| evaluate(&orig.wave(i), i, &w.params).0.score).unwrap_or(0.0),
+    let o = orig.wave(i);
+    let old = match scores.get(&i.to_string()).filter(|v| v.get("desc").is_some_and(|d| !d.is_null())).and_then(rank_json) {
+        Some(r) => r,
+        None => load_wave(i).map(|w| rank_of(&o, i, &w.params)).unwrap_or(f32::MIN),
     };
-    if score <= old {
+    // Rank what will be on disk: the file rounds numbers to 5 digits (it can cost a modal whistle 0.1).
+    wf.params = gmgen::params_json::from_json(&gmgen::params_json::to_json(&wf))?.params;
+    if rank_of(&o, i, &wf.params) <= old + 1e-4 {
         return Ok(false);
     }
     wf.placeholder = false;

@@ -405,6 +405,39 @@ Changes:
   (< 300 cents) and the partial stays loud for ≥ 100 ms. Without these limits it wrecked noise and short strikes
   (kick 376 → 0.00, hat 83 → 0.002, congas). Flag `mod_off` above 0.5.
 
+### D4n. Character descriptors, rank and the noise loop (drum listening at bank speed)
+
+The user re-listened at bank playback speed and named 13 drum waves as still wrong (196, 58, 272, 84, 315, 435, 476,
+49, 50, 62, 226, 106, 404). A descriptor study (orig vs gen, all 91 drum waves) ranked 18 candidate measures by how
+well they put those 13 above the rest. `1 − score` alone put only 4 in its worst 15 %. Three descriptors find what
+the frame score averages away (`gmfit/src/desc.rs`, `Score::describe`, run in `evaluate`, not in the fit loop):
+
+| Descriptor | Measures | Flag | Caught |
+|---|---|---|---|
+| fine contrast | 97th pct / median of the 8192-point spectrum per octave, energy-weighted, gen − orig | `lines`: ≥ +6 dB where the original is a wash (≤ `WASH_DB` = 20 dB) | crash 106, open hat 272, vibraslap 476 (+7…+25 dB: an additive comb for a noise) |
+| percussive share | median-filter H/P separation, energy in transients | `transient_off`: off by ≥ 0.2 | tambourine 435 (0.60 vs 0.22), stream 404, bubble 62, bird 50, ride 315 |
+| peaks per frame | spectral peaks within 30 dB of the frame max | `peaks_off`: ratio ≥ 1.6 | wave 196 (43 vs 22: modes smeared) |
+
+Together with a low score they cover all 13. Contrast is only meaningful on a wash: on a clean tone both are lines
+and leakage swings it ±15 dB (bass 0, organ 121 gave false `smear`/`lines`), hence the `WASH_DB` gate and no
+`smear` flag. Rejected (no separation): loudness flutter, crest factor, high-band kurtosis, per-partial decay
+spread, attack-to-loop seam.
+
+**Rank.** Choosing between versions of a wave (`keep_if_better`, `report --check`, `noise_loop`) uses
+`rank = score − 0.05 × character flags`. The frame score rewards an additive comb whose harmonic levels copy the loop's
+cluster energies; random noise cannot match those bins although the difference is inaudible on a wash, while the
+comb's lines are what the user hears. The flags stay out of the score itself (the fitter keeps optimising the frame
+metrics). `keep_if_better` ranks the version as it will be on disk (rounded to 5 digits: worth 0.1 on whistle 229).
+
+**Noise loop** (`analyze::noise_loop` / `pick_noise_loop`, in `analyze` and after the corrections in `correct_all`):
+when the loop is a wash and the additive comb is ≥ 6 dB peakier, try a loop-length `noise` sustain in 20 third-octave
+bands (Q 4.3; the `bands` table now holds ≤ 24 rows), the comb kept at 0/−6/−12/−18 dB or dropped; band gains by 4
+passes of original/model band energy, level so comb + noise = loop energy, high-pass at the first band within 40 dB
+of the strongest and low-pass at the top band edge (skirts otherwise leak 15–25 dB where the original is silent).
+Each candidate gets its `tf`/`env` refitted before it is ranked. Result: Chinese cymbal 84 0.57 → 0.62 and brush 58
+0.61 → 0.70, both without flags; crash 106 and open hat 272 stay combs (noise 0.51/0.47, comb 0.60/0.58 with `lines`),
+pending listening. Tambourine/stream/bubble need many tiny transients: the `shaker` family (7.5).
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

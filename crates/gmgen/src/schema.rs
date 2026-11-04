@@ -146,7 +146,8 @@ pub const FAMILIES: &[Family] = &[
         periodic: true,
     },
     // `bands`: [centre Hz, Q, gain dB].
-    Family { name: "noise", scalars: &NOISE, tables: &[Table { name: "bands", width: 3, max_rows: 8 }], periodic: true },
+    // `bands`: [centre Hz, Q, gain dB] band-passes summed in parallel (≤ 24: third octaves for a cymbal wash).
+    Family { name: "noise", scalars: &NOISE, tables: &[Table { name: "bands", width: 3, max_rows: 24 }], periodic: true },
     // `modes`: extra membrane modes [ratio to body frequency, gain dB, decay s].
     Family { name: "drum", scalars: &DRUM, tables: &[Table { name: "modes", width: 3, max_rows: 3 }], periodic: false },
     // `ratios`: square oscillators at base × ratio (default TR-808 set when empty).

@@ -145,6 +145,10 @@ skip when `GM_DLS` is unset.
   Bell/metal checks: agogo 25 0.03 → 0.69, triangle 446 0.00 → 0.50, belltree 49 0.00 → 0.26.
 - [x] 7.2a Wavelet analysis (design D4m): `gmfit/src/wavelet.rs` (Morlet band, trill, decay, band onsets),
   `modal` trill, band strikes, score `d_mod`/`mod_off`, `measure.py` flutter/pitch-movement/strike checks.
+- [x] 7.2b Character descriptors and rank (design D4n): `gmfit/src/desc.rs` (fine contrast, percussive share, peaks
+  per frame), flags `lines`/`transient_off`/`peaks_off`, rank = score − 0.05 per flag in `keep_if_better` and
+  `report --check`, `analyze::noise_loop` (third-octave noise sustain for wash loops; `noise` bands ≤ 24),
+  `play_speed` for listening pages, `measure.py` descriptor rows. Cymbal 84 and brush 58 moved to noise loops.
 - [ ] 7.3 Add the `formant` family (pulse/saw source, ≤ 5 formants), with tests for formant peak positions. Check it
   on 2 choir/voice waves. Verify both score above their placeholder score.
 - [ ] 7.4 Add the `subtractive` family (2 oscillators, resonant filter with envelope), with tests for cutoff response.

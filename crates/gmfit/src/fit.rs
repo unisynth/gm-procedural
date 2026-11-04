@@ -90,7 +90,9 @@ fn vars(p: &Params, only: Option<&[String]>) -> Vec<Var> {
 
 /// Score of `p` for wave `i` (1 = identical).
 pub fn score_of(orig: &[f32], i: usize, p: &Params) -> f32 {
-    crate::evaluate(orig, i, p).0.score
+    // Plain score (no descriptors: too slow for the fit loop).
+    let m = gmgen::bank::meta(i).expect("wave meta");
+    crate::score::score(orig, &gmgen::render_wave(i, p), &m).score
 }
 
 fn par_scores(orig: &[f32], i: usize, ps: &[Params]) -> Vec<f32> {
@@ -427,6 +429,13 @@ pub fn correct_all(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
         if sq + 0.005 >= s {
             (p, s) = (q, sq);
         }
+    }
+    // Noise loop on the fitted, corrected sound (the comb often turns peaky only after fitting); candidates get
+    // their attack tables refitted and are kept by rank (score − 0.05 per character flag).
+    let mut q = p.clone();
+    if crate::analyze::pick_noise_loop(i, orig, &meta, &mut q) {
+        s = score_of(orig, i, &q);
+        p = q;
     }
     // Re-pick the phase seed on the corrected sound (tables change the band levels); keep it unless the score drops.
     let before = p.clone();
