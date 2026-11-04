@@ -539,6 +539,26 @@ STK TubeBell 1:1.414 pairs, a 1:3.5 pair) take indices, decays and sustains from
 fitter tunes scalars only): EP2 145 0.43 (placeholder 0.011), tubular bell 464 0.21 (0.057) — above the
 placeholders, but additive analysis wins both (0.83, 0.57) and is kept by rank.
 
+### D4r. `formant` family, the laugh and two fit fixes (task 7.3)
+
+`gmgen/src/fam/formant.rs`: a band-limited saw or pulse source with aspiration, jitter and vibrato through ≤ 5
+parallel formant band-passes; a syllable table [s, dB, cents] gives the voiced source its own envelopes and a pitch
+fall (`syl_glide`), and `breath_db` is noise under the layer envelope. Sustain is per harmonic (source spectrum ×
+the formants' complex response) on the loop grid: exact. Tests: formant peaks within 10 % (whole and sustain),
+syllables at their times, loop exactness with vibrato.
+
+Laughing (226) is four voiced "ha" syllables at 0.20/0.33/0.46/0.63 s, f0 ≈ 850 Hz, each starting at once with a pitch
+arc, after 0.2 s of breathy noise. At that pitch LPC locks onto harmonics (a "formant" at 1830 Hz was harmonic 2), so
+high voices take formants from harmonic amplitudes; syllables must be periodic (the opening breath is not); the
+breath envelope is fitted to the floor between syllables. Laugh 226: hearing excess 0.54 → 0.10 (missing 53 % → 4 %),
+`transient_off` cleared, score 0.19. Choir check: formant beats the placeholders (Choir Aahs 85 0.16 vs 0.08, Voice
+Oohs 312 0.18 vs 0.05); additive wins both and is kept (85 → 0.50, 312 → 0.60). The rerun also lifted bubble 62
+(additive + noise + shaker: missing 24 % → 4 %).
+
+Two fit bugs surfaced once the hearing penalty made objectives negative: `score_of` returned 0 for a NaN render and
+`par_scores` 0 for invalid parameters, so a broken candidate beat every real one ("after 0.0" in bulk logs, a
+near-silent laugh). Both now return −1.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

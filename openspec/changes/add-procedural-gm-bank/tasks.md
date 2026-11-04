@@ -154,7 +154,7 @@ skip when `GM_DLS` is unset.
   `gmfit hear <w> [-p f]` at bank speed; rank and fit objective − 0.5 × audible excess. Named drums: belltree 49 extra
   0.11 → 0.03, stream 404 missing 0.15 → 0.09, brush 58 0.70 → 0.71, vibraslap 476 hears close; bird 50 and laughing
   226 need the FM / formant families (7.6, 7.3), bubble 62 its 1.9 kHz ring.
-- [ ] 7.3 Add the `formant` family (pulse/saw source, ≤ 5 formants), with tests for formant peak positions. Check it
+- [x] 7.3 Add the `formant` family (pulse/saw source, ≤ 5 formants), with tests for formant peak positions. Check it
   on 2 choir/voice waves. Verify both score above their placeholder score.
 - [ ] 7.4 Add the `subtractive` family (2 oscillators, resonant filter with envelope), with tests for cutoff response.
   Check it on 3 synth lead/pad/bass waves. Verify all 3 score above their placeholder score.
