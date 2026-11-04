@@ -488,6 +488,29 @@ rounding moved a hit one sample (0.4 cycle at 8 kHz) and cost up to 0.07 (tambou
 disk; whistle 229 0.48 → 0.39). Now nearest sample: 229 holds 0.48 on disk. `bulk` gained `GMFIT_BULK_DUMP=<dir>`
 (every pipeline result, kept or not).
 
+### D4p. Hearing-model difference (`gmfit hear`)
+
+Listening named differences the frame score and the descriptors average away. `gmfit/src/hear.rs` asks what a
+listener hears of the difference, with the ear model of PEAQ (ITU-R BS.1387) and the MPEG psychoacoustic models:
+outer/middle-ear weighting (Terhardt), half-Bark bands, frequency spreading (27 dB/Bark down, 24 + 230/f − 0.2·L up),
+threshold in quiet, forward masking (8–30 ms), Zwicker specific loudness — compared in the excitation domain, since
+two independent noises never match sample by sample. Both sounds play at bank speed (band-limited FFT resample; linear
+interpolation mirrored content above the new band edge).
+
+- `added` / `missing`: loudness of the copy above / below the original by more than 3 dB + 1.4 × the original's own
+  frame-to-frame fluctuation (robust median over 100 ms), as a share of its loudness; located in bands that hold
+  sound themselves (a loss spreads its excitation far upward at high level).
+- `flutter`/`moddiff` (PEAQ ModDiff on loudness^0.3) and `swell` (2–20 Hz share of the band envelopes).
+
+Calibration: a same-texture independent noise (Gaussian shaped by the original's smoothed STFT, level-matched) gives
+added + missing ≤ 0.047 and moddiff ≤ 0.017 on the 13 named drums → thresholds 0.05 / 0.02. Tests: identical = 0,
+same-colour noises below the floor, a removed 8 kHz tone found as missing at 6.5–10.5 kHz, resample pitch/level.
+Findings on the named waves: bird 50 misses its loud chirp moments (45 %, 3.2–3.8 kHz at bank speed: steady where
+the original bursts), laughing 226 misses 53 % at 7–8.4 kHz in 450–720 ms, bubble 62 sits ~15 % low (missing
+1.7–2.0 kHz, extra 1.5–1.7 kHz), stream 404 misses its top and is too loud at 0.55–0.65 kHz, belltree 49 has extra
+6–7.6 kHz in its first 200 ms, brush 58 and crash 106 lack the original's slow swell, 272/315 flutter more;
+cymbal 84 and tambourine 435 show nothing above the noise floor.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

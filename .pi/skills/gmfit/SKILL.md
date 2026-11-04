@@ -68,7 +68,9 @@ render it with `-p`. `render` exits with code 2 when any flag is set (even `pitc
    `preservesPitch = false`; at speed 1 many kit and SFX waves sound too fast): rebuild `build/gm/pilot/index.html` rows (orig/gen/sheet), serve the folder with
    `serve_mockup` and open the **localhost** URL on the canvas. A `kind:file` canvas of that page failed with "live-server
    target not found".
-5. For what is heard but not scored, **measure it** (below), fix the analysis or generator, and re-run.
+5. For what is heard but not scored, run `gmfit hear <w>` first (masking-model verdicts: what is extra, what is
+   missing, where and when, more/less fluctuation, swell), then **measure it** (below), fix the analysis or generator,
+   and re-run.
 6. Test, run `report --check`, `report --baseline`, document (design D4x, tasks, pilot research), and commit.
 
 ## Measure what the score averages away

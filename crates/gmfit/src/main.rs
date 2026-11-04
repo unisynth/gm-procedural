@@ -97,6 +97,27 @@ fn main() {
             println!("{text}");
             exit(if s.flags.is_empty() { 0 } else { 2 });
         }
+        Some("hear") => {
+            // hear <w> [-p params.json]: hearing-model difference (design D4p) at bank playback speed, 1 s played.
+            let i = wave_arg(&args);
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let wf = match opt("-p") {
+                Some(f) => std::fs::read_to_string(&f)
+                    .map_err(|e| e.to_string())
+                    .and_then(|t| gmgen::params_json::from_json(&t))
+                    .unwrap_or_else(|e| die(format!("{f}: {e}"))),
+                None => gmfit::load_wave(i).unwrap_or_else(|e| die(e)),
+            };
+            let m = gmgen::bank::meta(i).unwrap();
+            let o = orig.wave(i);
+            let synth = gmgen::render_wave(i, &wf.params);
+            let (key, speed, by) = gmfit::play_speed(i);
+            let (pa, pb) = (gmfit::audio::played(&o, &m, 1.0), gmfit::audio::played(&synth, &m, 1.0));
+            let h = gmfit::hear::hear(&gmfit::hear::at_speed(&pa, speed), &gmfit::hear::at_speed(&pb, speed), m.rate as f32);
+            let mut rep = json!({"wave": i, "play": {"key": key, "speed": score::r4(speed), "by": by}});
+            rep.as_object_mut().unwrap().extend(h.json().as_object().unwrap().clone());
+            println!("{}", serde_json::to_string_pretty(&rep).unwrap());
+        }
         Some("sweep") => {
             let i = wave_arg(&args);
             let (path, values) = (args.get(2).unwrap_or_else(|| die("missing parameter")), args.get(3).unwrap_or_else(|| die("missing values")));
@@ -230,7 +251,7 @@ fn main() {
             });
         }
         Some("report") => report(flag("--check"), flag("--baseline")),
-        _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | refine <w> | render <w> [-p f] | sweep <w> <param> <values> | bulk (--cat c | <w>...) [--iters n] [--rounds n] [--jobs n] | report [--check] [--baseline]"),
+        _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | refine <w> | render <w> [-p f] | hear <w> [-p f] | sweep <w> <param> <values> | bulk (--cat c | <w>...) [--iters n] [--rounds n] [--jobs n] | report [--check] [--baseline]"),
     }
 }
 

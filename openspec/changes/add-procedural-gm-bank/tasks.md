@@ -149,6 +149,8 @@ skip when `GM_DLS` is unset.
   per frame), flags `lines`/`transient_off`/`peaks_off`, rank = score − 0.1 per flag in `keep_if_better` and
   `report --check`, `analyze::noise_loop` (third-octave noise sustain for wash loops; `noise` bands ≤ 24),
   `play_speed` for listening pages, `measure.py` descriptor rows. Cymbal 84 and brush 58 moved to noise loops.
+- [x] 7.5a Hearing-model difference (design D4p): `gmfit/src/hear.rs` (PEAQ/MPEG ear model, excitation-domain
+  added/missing with a noise-texture tolerance, flutter/swell), `gmfit hear <w> [-p f]` at bank speed.
 - [ ] 7.3 Add the `formant` family (pulse/saw source, ≤ 5 formants), with tests for formant peak positions. Check it
   on 2 choir/voice waves. Verify both score above their placeholder score.
 - [ ] 7.4 Add the `subtractive` family (2 oscillators, resonant filter with envelope), with tests for cutoff response.

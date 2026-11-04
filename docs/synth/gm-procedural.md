@@ -227,6 +227,10 @@ Character descriptors (design D4n, `desc.rs`, not scored; `evaluate`/`render` ad
 `transient_off` (percussive share off by ≥ 0.2: jingles, bubbles), `peaks_off` (peaks per frame off by ≥ 1.6×).
 Versions of a wave are compared by rank = score − 0.1 per character flag (`keep_if_better`, `report --check`).
 
+Hearing model (design D4p): `gmfit hear <w> [-p f]` reports what a listener hears of the difference at bank speed —
+`added`/`missing` loudness above a JND plus the original's own fluctuation (where and when), `flutter` and `swell`
+differences, and plain verdict lines. Below 0.05 / 0.02 the copy is as close as an independent take of the same noise.
+
 Playback speed: `gmfit render` writes `play: {key, speed, by}` into `report.json`. Speed = 2^((key − unity)/12 +
 fine/1200), using the region's own unity/fine and the key the bank triggers the wave from. That key is the drum
 kit's key (Standard kit first), or for a melodic wave the unity note clamped to its main instrument's key range.
