@@ -274,7 +274,7 @@ partial stays loud for ≥ 100 ms. Still open: rattle trains in loops (476 vibra
 At bank speed (listening pages now play each wave at its bank speed, `gmfit::play_speed`) the user named 13 drum
 waves as wrong; the score caught 4. 18 descriptors were ranked by how well they separate those 13 from the other 78
 (AUC; `1 − score` 0.73). Fine spectral contrast, percussive share and peaks per frame each catch waves the score
-misses; with the score they cover all 13 and became flags. Versions are now chosen by rank (score − 0.05 per
+misses; with the score they cover all 13 and became flags. Versions are now chosen by rank (score − 0.1 per
 character flag). Wash loops modelled by an additive comb get a third-octave noise sustain candidate
 (`analyze::noise_loop`): Chinese cymbal 84 0.57 → 0.62, brush 58 0.61 → 0.70, no flags. Crash 106 and open hat 272
 stay combs pending listening (build/gm/noise/: comb, noise, comb −6 dB + noise). Tambourine, stream and bubble wait

@@ -424,7 +424,7 @@ and leakage swings it ±15 dB (bass 0, organ 121 gave false `smear`/`lines`), he
 spread, attack-to-loop seam.
 
 **Rank.** Choosing between versions of a wave (`keep_if_better`, `report --check`, `noise_loop`) uses
-`rank = score − 0.05 × character flags`. The frame score rewards an additive comb whose harmonic levels copy the loop's
+`rank = score − 0.1 × character flags`. The frame score rewards an additive comb whose harmonic levels copy the loop's
 cluster energies; random noise cannot match those bins although the difference is inaudible on a wash, while the
 comb's lines are what the user hears. The flags stay out of the score itself (the fitter keeps optimising the frame
 metrics). `keep_if_better` ranks the version as it will be on disk (rounded to 5 digits: worth 0.1 on whistle 229).
@@ -443,6 +443,11 @@ lowers its few prominent partials too. Added candidate: keep only partials ≥ 4
 neighbours at full level (with or without `spread`), drop the rest to −99 dB (the additive renderer stops at the
 first harmonic below −100 dB), noise fills the wash. Crash 106: 13 of 82 partials + noise, rank 0.560 vs comb 0.554 →
 saved (0.56, no flags). Open hat 272: 0.514 vs 0.529, stays a comb pending listening.
+
+Listening approved strong partials + noise on 106 and 272; the flag cost went 0.05 → 0.1 (the comb's frame-score
+lead on 272 was 0.065). Re-running the corrections on the remaining `lines` waves moved open hat 272 (0.58 → 0.51) and
+vibraslap 476 (0.43 → 0.38, `lines` and `transient_off` cleared: comb + noise loop) to noise; kick 376, 18, 230, 490
+kept theirs.
 
 `d_mod` fix found on the way: its trill-rate part applied when the original moved ≥ 20 cents, but a steady tone
 reads 15–25 cents of measurement wobble at a random rate — Fingered Bass 240 had dropped 0.88 → 0.30 (`mod_off`)

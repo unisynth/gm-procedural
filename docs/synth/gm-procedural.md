@@ -205,7 +205,7 @@ f0 > 5 cents off, pitched waves only) and `loop_click`.
 Character descriptors (design D4n, `desc.rs`, not scored; `evaluate`/`render` add them as `desc` and flags):
 `lines` (fine spectral contrast ≥ 6 dB above an original that is a noise wash: a comb where a cymbal is noise),
 `transient_off` (percussive share off by ≥ 0.2: jingles, bubbles), `peaks_off` (peaks per frame off by ≥ 1.6×).
-Versions of a wave are compared by rank = score − 0.05 per character flag (`keep_if_better`, `report --check`).
+Versions of a wave are compared by rank = score − 0.1 per character flag (`keep_if_better`, `report --check`).
 
 Playback speed: `gmfit render` writes `play: {key, speed, by}` into `report.json`. Speed = 2^((key − unity)/12 +
 fine/1200), using the region's own unity/fine and the key the bank triggers the wave from. That key is the drum

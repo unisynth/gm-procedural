@@ -513,7 +513,7 @@ pub fn noise_loop(i: usize, orig: &[f32], m: &WaveMeta, p: &Params) -> Vec<Param
     out
 }
 
-/// Keeps the best-ranked of `p` and its `noise_loop` candidates (rank: score − 0.05 per character flag), each
+/// Keeps the best-ranked of `p` and its `noise_loop` candidates (rank: score − 0.1 per character flag), each
 /// ranked after its attack tables (`tf`, `env`) are refitted — `p` usually has tuned tables, a fresh candidate not.
 /// Returns whether `p` changed.
 pub fn pick_noise_loop(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {

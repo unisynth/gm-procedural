@@ -240,10 +240,10 @@ pub fn set_param(p: &mut Params, path: &str, v: f32) -> Result<(), String> {
 
 /// Character flags (design D4n) and the score cost of each when choosing between versions of a wave.
 pub const CHAR_FLAGS: [&str; 3] = ["lines", "transient_off", "peaks_off"];
-pub const CHAR_PENALTY: f32 = 0.05;
+pub const CHAR_PENALTY: f32 = 0.1;
 
 /// Rank of a scored version: score − `CHAR_PENALTY` per character flag. A version that clears a character defect
-/// wins over one that scores up to 0.05 higher but keeps it (the frame score rewards a comb that matches the loop
+/// wins over one that scores up to 0.1 higher but keeps it (the frame score rewards a comb that matches the loop
 /// bins over the noise wash it replaces). Needs `Score::describe` (`evaluate` does it).
 pub fn rank(s: &score::Score) -> f32 {
     s.score - CHAR_PENALTY * s.flags.iter().filter(|f| CHAR_FLAGS.contains(f)).count() as f32
@@ -260,7 +260,7 @@ pub fn rank_of(orig: &[f32], i: usize, p: &Params) -> f32 {
     rank(&evaluate(orig, i, p).0)
 }
 
-/// Waves whose new rank (`rank_json`: score − 0.05 per character flag) is more than 0.005 below the committed one
+/// Waves whose new rank (`rank_json`: score − 0.1 per character flag) is more than 0.005 below the committed one
 /// (`report --check`).
 pub fn regressions(committed: &serde_json::Map<String, Value>, new: &serde_json::Map<String, Value>) -> Vec<String> {
     let mut out: Vec<(usize, String)> = new
@@ -274,7 +274,7 @@ pub fn regressions(committed: &serde_json::Map<String, Value>, new: &serde_json:
     out.into_iter().map(|x| x.1).collect()
 }
 
-/// Writes `wf` for wave `i` when its rank (score − 0.05 per character flag) beats the committed one (scores.json
+/// Writes `wf` for wave `i` when its rank (score − 0.1 per character flag) beats the committed one (scores.json
 /// when it has the descriptors, else the current file's), and records the new score. `_score` (the caller's plain
 /// score) is not trusted: the version is re-evaluated with descriptors. Returns whether it was written.
 pub fn keep_if_better(orig: &Orig, i: usize, mut wf: WaveFile, _score: f32) -> Result<bool, String> {

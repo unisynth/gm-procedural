@@ -146,7 +146,7 @@ skip when `GM_DLS` is unset.
 - [x] 7.2a Wavelet analysis (design D4m): `gmfit/src/wavelet.rs` (Morlet band, trill, decay, band onsets),
   `modal` trill, band strikes, score `d_mod`/`mod_off`, `measure.py` flutter/pitch-movement/strike checks.
 - [x] 7.2b Character descriptors and rank (design D4n): `gmfit/src/desc.rs` (fine contrast, percussive share, peaks
-  per frame), flags `lines`/`transient_off`/`peaks_off`, rank = score − 0.05 per flag in `keep_if_better` and
+  per frame), flags `lines`/`transient_off`/`peaks_off`, rank = score − 0.1 per flag in `keep_if_better` and
   `report --check`, `analyze::noise_loop` (third-octave noise sustain for wash loops; `noise` bands ≤ 24),
   `play_speed` for listening pages, `measure.py` descriptor rows. Cymbal 84 and brush 58 moved to noise loops.
 - [ ] 7.3 Add the `formant` family (pulse/saw source, ≤ 5 formants), with tests for formant peak positions. Check it

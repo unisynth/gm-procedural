@@ -431,7 +431,7 @@ pub fn correct_all(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
         }
     }
     // Noise loop on the fitted, corrected sound (the comb often turns peaky only after fitting); candidates get
-    // their attack tables refitted and are kept by rank (score − 0.05 per character flag).
+    // their attack tables refitted and are kept by rank (score − 0.1 per character flag).
     let mut q = p.clone();
     if crate::analyze::pick_noise_loop(i, orig, &meta, &mut q) {
         s = score_of(orig, i, &q);
