@@ -1,7 +1,7 @@
 //! `modal`: a resonator of up to 32 modes `[Hz, dB, decay s, phase cycles]` struck by a train of `hits` (every
 //! `period` s, each `hit_db` dB louder or softer than the one before, timing `jitter`). Every hit restarts a shared
 //! pitch glide (start `glide` cents off, relaxing with `glide_t`), a per-hit attack `ha` and a band-passed noise
-//! click (`click_hp`…`click_lp`). A `hits` table [s, dB] gives measured strike times instead (guiro, vibraslap). One hit is a struck object (conga, agogo, triangle, whistle); several are a rattle (vibraslap, guiro) or
+//! click (`click_hp`…`click_lp`), and a trill (`trill_hz`, `trill_cents`: FM of every mode, restarted per hit). A `hits` table [s, dB] gives measured strike times instead (guiro, vibraslap). One hit is a struck object (conga, agogo, triangle, whistle); several are a rattle (vibraslap, guiro) or
 //! repeated chirps (bird).
 //!
 //! Sustain region (exactly periodic over the loop):
@@ -24,6 +24,9 @@ struct Hit {
     cd: f32,
     hp: f32,
     lp: f32,
+    /// Trill: rate Hz and peak relative deviation (2^(cents/1200) − 1).
+    tr: f32,
+    td: f32,
 }
 
 impl Hit {
@@ -32,6 +35,8 @@ impl Hit {
         let e = exp(-tau / self.gt);
         let warp = tau + (self.r - 1.0) * self.gt * (1.0 - e);
         let att = if self.ha > 0.0 && tau < self.ha { tau / self.ha } else { 1.0 };
+        // Trill: f(τ) = f·(1 + d·cos 2π r τ) → phase f·(τ + d·sin(2π r τ)/(2π r)) in cycles.
+        let fm = if self.tr > 0.0 { self.td * sin_cycles(self.tr * tau) / (6.283_185 * self.tr) } else { 0.0 };
         let mut y = 0.0;
         let mut alive = false;
         for m in &self.modes {
@@ -40,7 +45,7 @@ impl Hit {
                 continue;
             }
             alive = true;
-            y += m[1] * g * sin_cycles(m[0] * warp + m[3]);
+            y += m[1] * g * sin_cycles(m[0] * (warp + fm) + m[3]);
         }
         alive.then_some(y * att)
     }
@@ -87,6 +92,8 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         cd: l.get("click_decay"),
         hp: l.get("click_hp"),
         lp: l.get("click_lp").min(0.49 * ctx.rate),
+        tr: l.get("trill_hz"),
+        td: exp2(l.get("trill_cents") / 1200.0) - 1.0,
     };
     match (ctx.freeze(), ctx.lp) {
         (Some(_), Some((s, len))) if hits <= 1 => {

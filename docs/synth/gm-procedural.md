@@ -156,6 +156,7 @@ and a band-passed noise click.
 | `ha` | 0…0.05 s | 0.0002 | attack of each hit |
 | `hits`, `period`, `hit_db`, `jitter`, `offset` | | 1, 0.05, 0, 0, 0 | regular train (when the `hits` table is empty) |
 | `click_db`, `click_decay`, `click_hp`, `click_lp` | dB, s, Hz, Hz | −80, 0.003, 1000, 20000 | noise burst per hit |
+| `trill_hz`, `trill_cents` | 0…400 Hz, 0…1200 | 0, 0 | frequency modulation of every mode (a whistle's pea), restarted per hit |
 
 Tables:
 - `modes`: `[Hz, dB, decay s, phase cycles]`, absolute frequencies.
@@ -193,7 +194,9 @@ Both waves are "played": the attack, then the loop repeated to 0.5 s.
 | `d_loop` | mean dB difference of the loop's exact DFT bins (DC excluded) |
 | `d_per` | periodicity difference: mean over 30 ms frames (first 300 ms) of the best normalised autocorrelation at 0.5–25 ms lags. Tone vs noise of the same spectrum (design D4l) |
 
-`score = exp(−(d_spec/12 + d_onset/12 + d_env/6 + d_loop/12 + d_per))`; flag `tone_off` when `d_per` > 0.25. A-weighting and the onset term came from listening:
+| `d_mod` | wavelet modulation of the original's strongest partial: flutter dB / 6 + pitch movement cents / 100 + |log₂ rate ratio| (each ≤ 1); only for a tonal original whose partial is loud ≥ 100 ms (design D4m) |
+
+`score = exp(−(d_spec/12 + d_onset/12 + d_env/6 + d_loop/12 + d_per + d_mod))`; flags `tone_off` (`d_per` > 0.25) and `mod_off` (`d_mod` > 0.5). A-weighting and the onset term came from listening:
 the kick's missing click had cost almost nothing. Tiers: A ≥ 0.85, B ≥ 0.70, C below that; a `buzz`, `clipped`, `loop_click`, `silent` or `nan` flag means C. Flags: `silent`,
 `clipped`, `nan`, `env_off` (10 ms span > 6 dB off where the original is above −40 dB), `pitch_off` (autocorrelation
 f0 > 5 cents off, pitched waves only) and `loop_click`.

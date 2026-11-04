@@ -211,6 +211,65 @@ row("glide (cents)", f"{go:.0f}", f"{gg:.0f}", abs(go - gg) <= max(50, 0.3 * abs
 qo, qg = periodicity1(a), periodicity1(b)
 row("periodicity", f"{qo:.2f}", f"{qg:.2f}", abs(qg - qo) <= 0.15, "noise too strong" if qg < qo else "add noise/click")
 
+# Wavelet (design D4m): flutter vs pitch movement of the strongest partial, strikes inside its band.
+def wband(x, fc, cycles):
+    n = len(x)
+    N = 1 << int(np.ceil(np.log2(n + 4 * cycles * sr / fc)))
+    X = np.fft.fft(x, N)
+    hz = np.fft.fftfreq(N, 1 / sr)
+    X *= np.where(hz > 0, 2 * np.exp(-0.5 * ((hz - fc) / (fc / cycles)) ** 2), 0)
+    y = np.fft.ifft(X)[:n]
+    return np.abs(y), np.concatenate([[fc], np.angle(y[1:] * np.conj(y[:-1])) * sr / (2 * np.pi)])
+
+
+def flutter(x, fc):
+    x = x[: int(0.3 * sr)]
+    amp, fi = wband(x, fc, max(fc / 250, 4))
+    loud = np.where(amp > 0.25 * amp.max())[0]
+    if len(loud) == 0 or loud[-1] - loud[0] < 0.1 * sr:
+        return None
+    a0, b0 = loud[0], loud[-1] + 1
+    k = np.ones(int(0.025 * sr)) / int(0.025 * sr)
+    dsd = lambda v: float(np.sqrt(np.mean((v - np.convolve(v, k, "same")) ** 2)))
+    d = 20 * np.log10(amp[a0:b0] + 1e-9)
+    c = 1200 * np.log2(np.maximum(fi[a0:b0], 1) / fc)
+    v = c - np.convolve(c, k, "same")
+    S = np.abs(np.fft.rfft(v * np.hanning(len(v))))
+    ff = np.fft.rfftfreq(len(v), 1 / sr)
+    m = (ff > 15) & (ff < 400)
+    return dsd(d), dsd(c), ff[m][np.argmax(S[m])]
+
+
+def strikes(x, fc):
+    amp, _ = wband(x[: int(0.5 * sr)], fc, 3)
+    A = 20 * np.log10(amp + 1e-9)
+    h, gap = int(0.002 * sr), int(0.008 * sr)
+    n, k = 0, h
+    while k < len(A):
+        if A[k] > A.max() - 30 and A[k] - A[k - h] >= 6:
+            n, k = n + 1, k + gap
+        else:
+            k += 1
+    return n
+
+
+xs = a[: int(0.3 * sr)]
+P = np.abs(np.fft.rfft(xs * np.hanning(len(xs)), 1 << 15))
+ff = np.fft.rfftfreq(1 << 15, 1 / sr)
+mm = (ff >= 100) & (ff <= 0.45 * sr)
+fc = ff[mm][np.argmax(P[mm])]
+fo, fg = flutter(a, fc), flutter(b, fc)
+if fo and fg:
+    row(f"flutter @{fc:.0f} Hz", f"{fo[0]:.1f}", f"{fg[0]:.1f}", abs(fg[0] - fo[0]) <= 2, "beating modes → trill (FM)" if fg[0] > fo[0] else "missing AM", " dB")
+    row("pitch movement", f"{fo[1]:.0f}c@{fo[2]:.0f}", f"{fg[1]:.0f}c@{fg[2]:.0f}", abs(fg[1] - fo[1]) <= 40, "modal trill_hz/trill_cents, additive vib")
+else:
+    rows.append("flutter / pitch movement n/a (no partial loud for 100 ms)")
+so, sg = strikes(a, fc), strikes(b, fc)
+if fo and fo[1] >= 20:
+    rows.append("strikes in band          n/a (trilled partial: each sweep reads as a strike)")
+else:
+  row(f"strikes @{fc:.0f} Hz band", f"{so}", f"{sg}", abs(so - sg) <= max(1, so // 4), "modal hits table (band onsets)")
+
 # Attack: level per 50 ms x 4 bands over the first 0.3 s (tf grid, coarse).
 off_cells = []
 for t0 in range(0, int(0.3 * sr), int(0.05 * sr)):

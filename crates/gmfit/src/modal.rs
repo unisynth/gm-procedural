@@ -4,6 +4,8 @@
 //!   (single-frequency tracker over Hann frames) — a few pure tones, not noise.
 //! - [`glide`]: the strongest partial's frequency from the onset: start offset (cents) and time constant.
 //! - [`sparse_loop`]: the exact loop-DFT bins holding 99.5 % of the loop energy, with phases (cymbal/belltree loops).
+//! - wavelet (`crate::wavelet`): trill of the strongest partial (FM → `trill_hz`/`trill_cents`, sidebands
+//!   dropped) and strikes inside its band (→ `hits`), design D4m.
 //! - [`tonal_share`]: energy in the 8 strongest peaks / total (1 = a few pure tones).
 //!
 //! [`candidates`] turns these into whole-wave `modal` parameter sets; `analyze` keeps the best scoring model.
@@ -273,6 +275,32 @@ fn struck(x: &[f32], rate: f32, region: Region, max: usize) -> Option<Layer> {
             m[0] = m[0].max(1.0);
         }
     }
+    // Trill (wavelet, design D4m): FM of the strongest partial. Its carrier is the mean instantaneous frequency;
+    // modes at carrier ± n·rate are sidebands of the trill, not modes.
+    let trilled = crate::wavelet::trill(&x[t0..], rate, modes[0][0]);
+    if let Some((tr, cents, _, carrier)) = trilled {
+        modes[0][0] = carrier;
+        // Decay from the wavelet amplitude smoothed over a trill period (a fixed-frequency tracker loses the
+        // moving partial and reads a fast decay); all modes share it.
+        let d = crate::wavelet::decay(&x[t0..], rate, carrier, 1.0 / tr);
+        for m in &mut modes {
+            m[2] = d;
+        }
+        let c = carrier;
+        modes = modes
+            .into_iter()
+            .enumerate()
+            // Everything the trill spreads over (±3·rate + the deviation) belongs to the carrier.
+            .filter(|(k, m)| *k == 0 || (m[0] - c).abs() > 3.0 * tr + c * (2f32.powf(cents / 1200.0) - 1.0))
+            .map(|(_, m)| m)
+            .collect();
+        l.set("trill_hz", tr);
+        l.set("trill_cents", cents.min(1200.0));
+    }
+    // Strikes: in the band of the strongest partial (wavelet) when that finds more than the broadband envelope.
+    // (Not with a trill: its loudness dips look like strikes.)
+    let banded = if trilled.is_some() { Vec::new() } else { crate::wavelet::band_onsets(&x[t0..], rate, modes[0][0]) };
+    let on: Vec<(usize, f32)> = if banded.len() > on.len() { banded.iter().map(|o| (o.0 + t0, o.1)).collect() } else { on };
     // Two or more strikes: the measured onsets as the `hits` table (times from the first, levels re the first).
     if on.len() >= 2 {
         l.tables[1] = on.iter().take(32).flat_map(|o| [(o.0 - t0) as f32 / rate, (o.1 - on[0].1).clamp(-60.0, 24.0)]).collect();
@@ -467,7 +495,14 @@ pub fn candidates(i: usize, orig: &[f32], m: &WaveMeta) -> Vec<Params> {
             out.push(p.clone());
             // (b) folded hit train: onsets over three tiles of the loop.
             let tiled: Vec<f32> = lpx.iter().chain(lpx).chain(lpx).copied().collect();
-            let on: Vec<(usize, f32)> = onsets(&tiled, rate).into_iter().filter(|o| o.0 >= l && o.0 < 2 * l).collect();
+            let mut on: Vec<(usize, f32)> = onsets(&tiled, rate).into_iter().filter(|o| o.0 >= l && o.0 < 2 * l).collect();
+            // Strikes in the band of the loop's strongest partial (wavelet), when that finds more.
+            if let Some(f) = partials(lpx, rate, 1).first().map(|m| m[0]) {
+                let b: Vec<(usize, f32)> = crate::wavelet::band_onsets(&tiled, rate, f).into_iter().filter(|o| o.0 >= l && o.0 < 2 * l).collect();
+                if b.len() > on.len() {
+                    on = b;
+                }
+            }
             if on.len() >= 2 {
                 let first = on[0].0;
                 let seg: Vec<f32> = tiled[first..first + l].to_vec();

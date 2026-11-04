@@ -46,6 +46,7 @@ pub mod audio;
 pub mod cmaes;
 pub mod fit;
 pub mod modal;
+pub mod wavelet;
 pub mod priors;
 pub mod score;
 pub mod sheet;

@@ -92,6 +92,8 @@ Thresholds are provisional (add-wav-resynthesis design D5). Treat OFF as "listen
 | falling "pew" / chirp | glide (instantaneous frequency of the strongest partial) | `modal` `glide`/`glide_t` |
 | rattle, scrape (vibraslap, guiro), repeated chirps | onset count | `modal` `hits` table (measured strike times) + click |
 | cymbal/bell loop with the wrong peaks | strongest loop peaks | `modal` sustain: sparse loop bins + residual noise |
+| whistle "pulses"; trill / pea rattle | wavelet flutter (dB) vs pitch movement (cents, rate) of the strongest partial; score `d_mod`, flag `mod_off` | `modal` `trill_hz`/`trill_cents` (FM), not beating modes (design D4m) |
+| strikes missing in a rattle | strikes inside the resonance band (wavelet) | `modal` `hits` table from `wavelet::band_onsets` |
 | rumble | power below 0.7·f0 | noise `hp` |
 | too bright / dull top | 500 Hz-band levels 6–11 kHz | noise `lp`, harmonic tail |
 | attack click / wrong decay / cut at the end | level per 50 ms × band (`tf` grid); a one-shot's last 10 ms vs the original | `tf`, `env` (one-shot end point, design D4j), drum noise layer |

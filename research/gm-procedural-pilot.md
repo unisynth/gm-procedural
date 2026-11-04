@@ -260,6 +260,15 @@ drums 4 A / 19 B / 68 C, no regressions.
 
 (*rescored with `d_per`.) Open: FM (trill) partials, irregular rattle trains in loops, cymbal sustain.
 
+## Wavelet analysis (design D4m), drums pass 3
+
+A Morlet wavelet separates a trill (FM) from beating partials (AM) and finds strikes inside a resonance band.
+Whistle 229, under the new `d_mod` term: 0.18 → 0.48. Flutter 4.2 vs 4.0 dB; pitch movement 119 cents at 98 Hz vs
+93 cents at 101 Hz (pass 2 beat at 9.3 dB / 200 Hz). Drums pass 3: 30 of 91 improved (mean +0.04), no
+regressions. `d_mod` without limits wrecked noise and short strikes, so it counts only for a tonal original whose
+partial stays loud for ≥ 100 ms. Still open: rattle trains in loops (476 vibraslap, 50 bird); band strikes found
+33 in 476 but the hit-train candidate still loses to the prior model.
+
 ## Open findings for the bulk fit
 
 - **Organ key click** (2–3 kHz, about 10 ms): a click `noise` attack layer for organ priors.

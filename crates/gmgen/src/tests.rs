@@ -280,3 +280,25 @@ fn modal_modes_hits_and_loops() {
         }
     }
 }
+
+/// `modal` trill (design D4m): the instantaneous frequency swings by the set depth at the set rate.
+#[test]
+fn modal_trill_modulates_frequency() {
+    use crate::params::{Layer, Params};
+    use crate::render::WaveMeta;
+    use crate::schema::{family, Region};
+    let one = WaveMeta { rate: 22050, len: 8820, unity: 60, fine: 0, looped: None };
+    let mut lay = Layer::new(family("modal").unwrap(), Region::Whole);
+    lay.tables[0] = std::vec![2000.0, -6.0, 10.0, 0.0];
+    lay.set("trill_hz", 100.0);
+    lay.set("trill_cents", 100.0);
+    let mut p = Params::default();
+    p.layers.push(lay);
+    let x = render(&one, &p, 1);
+    // Interpolated upward zero crossings → per-cycle frequency: spans about ±6 % (100 cents).
+    let seg = &x[2205..6615];
+    let cr: Vec<f32> = (1..seg.len()).filter(|&k| seg[k - 1] <= 0.0 && seg[k] > 0.0).map(|k| (k - 1) as f32 + seg[k - 1] / (seg[k - 1] - seg[k])).collect();
+    let zc: Vec<f32> = cr.windows(2).map(|w| 22050.0 / (w[1] - w[0])).collect();
+    let (lo, hi) = (zc.iter().copied().fold(f32::MAX, f32::min), zc.iter().copied().fold(0.0, f32::max));
+    assert!(hi / lo > 1.08 && hi / lo < 1.25, "swing {lo}..{hi}");
+}

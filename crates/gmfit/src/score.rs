@@ -23,6 +23,9 @@ pub const W_LOOP: f32 = 12.0;
 pub const W_ONSET: f32 = 12.0;
 /// Periodicity difference (0–1): a pure tone vs narrow-band noise of the same spectrum (design D4l).
 pub const W_PER: f32 = 1.0;
+/// Modulation of the strongest partial (wavelet, design D4m): loudness flutter (per 6 dB) + pitch movement (per
+/// 100 cents) difference. A trill (FM) vs beating partials (AM) of the same spectrum.
+pub const W_MOD: f32 = 1.0;
 const FLOOR: f32 = -80.0;
 /// Dynamic range compared by `d_spec` (below the peak) and by `d_loop` (`LOOP_RANGE`).
 pub const SPEC_RANGE: f32 = 50.0;
@@ -38,6 +41,7 @@ pub struct Score {
     pub d_loop: f32,
     pub d_onset: f32,
     pub d_per: f32,
+    pub d_mod: f32,
     pub flags: Vec<&'static str>,
     pub f0_orig: Option<f32>,
     pub f0_gen: Option<f32>,
@@ -46,7 +50,7 @@ pub struct Score {
 impl Score {
     pub fn json(&self) -> Value {
         json!({"score": r4(self.score), "d_spec": r4(self.d_spec), "d_env": r4(self.d_env), "d_loop": r4(self.d_loop), "d_onset": r4(self.d_onset),
-               "d_per": r4(self.d_per), "flags": self.flags, "f0_orig": self.f0_orig.map(r4), "f0_gen": self.f0_gen.map(r4)})
+               "d_per": r4(self.d_per), "d_mod": r4(self.d_mod), "flags": self.flags, "f0_orig": self.f0_orig.map(r4), "f0_gen": self.f0_gen.map(r4)})
     }
 }
 
@@ -358,7 +362,7 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     let (a, b) = (played(orig, m, PLAYED_SECS), played(synth, m, PLAYED_SECS));
     let mut flags = Vec::new();
     if synth.iter().any(|v| !v.is_finite()) {
-        return Score { score: 0.0, d_spec: 99.0, d_env: 99.0, d_loop: 99.0, d_onset: 99.0, d_per: 1.0, flags: vec!["nan"], f0_orig: None, f0_gen: None };
+        return Score { score: 0.0, d_spec: 99.0, d_env: 99.0, d_loop: 99.0, d_onset: 99.0, d_per: 1.0, d_mod: 1.0, flags: vec!["nan"], f0_orig: None, f0_gen: None };
     }
     let win = min_window(m);
     let (ds, don) = d_spec(&a, &b, rate, win);
@@ -430,8 +434,79 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     if dp > 0.25 {
         flags.push("tone_off");
     }
-    let score = (-(ds / W_SPEC + don / W_ONSET + de / W_ENV + dl / W_LOOP + dp / W_PER)).exp();
-    Score { score, d_spec: ds, d_env: de, d_loop: dl, d_onset: don, d_per: dp, flags, f0_orig: fa, f0_gen: fb }
+    // Only for a real partial: the original tonal (tonal share > 0.6) and its partial stable (pitch sd < 300 cents);
+    // on noise the "partial" moves at random. Each part capped at 1.
+    let tonal = crate::modal::tonal_share(&a[..a.len().min((0.3 * rate) as usize)], rate) > 0.6;
+    let dm = match strongest_partial(&a, rate).filter(|_| tonal) {
+        Some(f) => match (modulation(&a, rate, f), modulation(&b, rate, f)) {
+            (Some((am_a, fm_a, ra)), Some((am_b, fm_b, rb))) if fm_a < 300.0 => {
+                // Rate of the pitch movement too, when the original moves (a trill at the wrong speed).
+                let rate_term = if fm_a >= 20.0 && ra > 0.0 && rb > 0.0 { (rb / ra).log2().abs().min(1.0) } else { 0.0 };
+                ((am_a - am_b).abs() / 6.0).min(1.0) + ((fm_a - fm_b).abs() / 100.0).min(1.0) + rate_term
+            }
+            _ => 0.0,
+        },
+        None => 0.0,
+    };
+    if dm > 0.5 {
+        flags.push("mod_off");
+    }
+    let score = (-(ds / W_SPEC + don / W_ONSET + de / W_ENV + dl / W_LOOP + dp / W_PER + dm / W_MOD)).exp();
+    Score { score, d_spec: ds, d_env: de, d_loop: dl, d_onset: don, d_per: dp, d_mod: dm, flags, f0_orig: fa, f0_gen: fb }
+}
+
+/// Strongest spectral peak (Hz, 100 Hz – 0.45·rate) of the first 300 ms.
+fn strongest_partial(x: &[f32], rate: f32) -> Option<f32> {
+    let n = x.len().min((0.3 * rate) as usize);
+    if n < 256 {
+        return None;
+    }
+    let nfft = n.next_power_of_two() * 2;
+    let mut buf: Vec<Complex32> = (0..nfft)
+        .map(|k| {
+            let w = if k < n { 0.5 - 0.5 * (std::f32::consts::TAU * (k as f32 + 0.5) / n as f32).cos() } else { 0.0 };
+            Complex32::new(if k < n { x[k] * w } else { 0.0 }, 0.0)
+        })
+        .collect();
+    FftPlanner::<f32>::new().plan_fft_forward(nfft).process(&mut buf);
+    let hz = |k: usize| k as f32 * rate / nfft as f32;
+    (1..nfft / 2).filter(|&k| hz(k) >= 100.0 && hz(k) <= 0.45 * rate).max_by(|a, b| buf[*a].norm_sqr().total_cmp(&buf[*b].norm_sqr())).map(hz)
+}
+
+/// Loudness flutter (dB sd), pitch movement (cents sd) and its rate (Hz) of the partial at `f`: Morlet band (sd min(f/4, 250 Hz)) over the part
+/// within 12 dB of its peak in the first 300 ms, after removing the slow trend (25 ms moving average) so decays
+/// and glides do not count. `None` when that part is shorter than 100 ms.
+fn modulation(x: &[f32], rate: f32, f: f32) -> Option<(f32, f32, f32)> {
+    let x = &x[..x.len().min((0.3 * rate) as usize)];
+    // Band sd min(f/4, 250 Hz): passes a ±100 Hz trill's sidebands, keeps neighbouring partials out.
+    let (amp, inst) = crate::wavelet::band(x, rate, f, (f / 250.0).max(4.0));
+    let top = amp.iter().copied().fold(0.0f32, f32::max);
+    let loud: Vec<usize> = (0..amp.len()).filter(|&k| amp[k] > 0.25 * top).collect();
+    let (a, b) = (*loud.first()?, *loud.last()?);
+    // Sustained sounds only (≥ 100 ms loud): on a short strike the decay and glide leak into the measure.
+    if b < a + (0.1 * rate) as usize {
+        return None;
+    }
+    let w = ((0.025 * rate) as usize).max(1);
+    let detrend_sd = |v: &[f32]| {
+        let n = v.len();
+        let mut acc = 0.0f32;
+        let mut s = 0.0f32;
+        for k in 0..n {
+            let lo = k.saturating_sub(w / 2);
+            let hi = (k + w / 2).min(n - 1);
+            let m = v[lo..=hi].iter().sum::<f32>() / (hi - lo + 1) as f32;
+            let d = v[k] - m;
+            acc += d * d;
+            s += 1.0;
+        }
+        (acc / s.max(1.0)).sqrt()
+    };
+    let db: Vec<f32> = amp[a..=b].iter().map(|v| 20.0 * v.max(1e-9).log10()).collect();
+    let cents: Vec<f32> = inst[a..=b].iter().map(|v| 1200.0 * (v.max(1.0) / f).log2()).collect();
+    // Rate of the pitch movement: strongest 15–400 Hz periodicity of the cents curve.
+    let (r, _) = crate::wavelet::mod_rate(&cents, rate, 15.0, 400.0);
+    Some((detrend_sd(&db), detrend_sd(&cents), r))
 }
 
 /// Periodicity (design D4l): mean over 30 ms frames (hop 15 ms, first 300 ms, frames within 30 dB of the loudest)

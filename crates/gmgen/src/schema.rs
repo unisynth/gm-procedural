@@ -108,7 +108,7 @@ static METAL: [Scalar; 10] = [
     s("noise", 0.0, 1.0, 0.0),  // mix of white noise into the oscillator bank
 ];
 
-static MODAL: [Scalar; 18] = with_env![
+static MODAL: [Scalar; 20] = with_env![
         s("level_db", -80.0, 24.0, 0.0),
         s("glide", -4800.0, 4800.0, 0.0), // cents the modes start off their frequency at each hit
         s("glide_t", 0.0005, 2.0, 0.02),
@@ -121,7 +121,9 @@ static MODAL: [Scalar; 18] = with_env![
         s("click_decay", 0.0002, 0.1, 0.003),
         s("click_hp", 20.0, 10000.0, 1000.0),
         s("click_lp", 100.0, 20000.0, 20000.0), // click band top (one-pole low-pass)
-        s("offset", 0.0, 1.0, 0.0), // sustain hit train: first hit after the loop start, in periods
+        s("offset", 0.0, 1.0, 0.0),
+        s("trill_hz", 0.0, 400.0, 0.0), // frequency modulation of every mode (a whistle's pea), per hit
+        s("trill_cents", 0.0, 1200.0, 0.0), // sustain hit train: first hit after the loop start, in periods
 ];
 
 pub const FAMILIES: &[Family] = &[

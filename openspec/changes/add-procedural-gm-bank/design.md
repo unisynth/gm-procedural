@@ -375,6 +375,36 @@ makes the model choice automatic.
 longer than a frame (guiro 0.20). It cannot help a 29 ms glide (196): at that length the original isn't
 periodic either.
 
+### D4m. Wavelet analysis: trill and band strikes
+Question: does a wavelet transform help understand an existing sound? Tested on the two failures of D4l, where a
+fixed STFT window misled the analysis. A complex Morlet band (frequency-domain Gaussian around f) gives amplitude
+and instantaneous frequency per sample:
+
+| wave | | flutter (AM) | pitch movement (FM) | strikes in the 1248 Hz band |
+|---|---|---|---|---|
+| whistle 229 | original | 3.5 dB @ 100 Hz | ±120 Hz @ 100 Hz | |
+| | modal pass 2 | 9.3 dB @ 100 Hz | beating @ 200 Hz | |
+| vibraslap 476 | original | | | 23 |
+| | generated | | | 10 |
+
+The whistle's sidebands come from a trill (frequency modulation). Fixed modes at the sideband frequencies beat as
+amplitude modulation instead. The STFT shows the same sidebands for both.
+
+Changes:
+- `gmfit/src/wavelet.rs`:
+  - `band`: the Morlet band.
+  - `trill`: rate, depth and carrier when the pitch movement is periodic. Band sd is min(f/4, 250 Hz), wide
+    enough for a ±100 Hz trill and narrow enough to keep neighbouring partials out.
+  - `decay`: from the amplitude smoothed over one trill period.
+  - `band_onsets`: strikes inside a resonance band.
+- `modal`: `trill_hz`/`trill_cents` (FM of every mode, restarted per hit). With a trill, analysis drops every mode
+  within ±(3·rate + depth) of the carrier and skips band strikes, since trill dips look like strikes.
+- Strikes: band onsets at the strongest partial replace broadband onsets when they find more (whole and loop).
+- Score `d_mod`: flutter difference / 6 dB + pitch-movement difference / 100 cents (each capped at 1) of the
+  original's strongest partial. It counts only when the original is tonal (share > 0.6), its partial is stable
+  (< 300 cents) and the partial stays loud for ≥ 100 ms. Without these limits it wrecked noise and short strikes
+  (kick 376 → 0.00, hat 83 → 0.002, congas). Flag `mod_off` above 0.5.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators
