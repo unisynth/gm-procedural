@@ -169,7 +169,7 @@ at the loop start: a cymbal or belltree loop made of sparse peaks. With more hit
 (including the clicks) renders over enough loops for the tails and is folded into the loop. Both stay exactly
 periodic.
 
-Further families (`ks`, `formant`, `subtractive`) arrive in task group 7.
+Further families (`ks`, `subtractive`) arrive in task group 7.
 
 ### `shaker` (periodic; PhISEM)
 
@@ -212,6 +212,29 @@ Analysis (`gmfit/src/fm.rs`, design D4q): a chirp cycle — the loop's dominant 
 cycles per loop from the repeating level track, averaged into 32 `cyc` points on a sine, the head before the train an
 attack tone with its glide — and operator presets (DX7-style EP pairs 1:1 + 1:14, STK TubeBell 1:1.414 pairs, a
 1:3.5 pair) with indices/decays/sustains set by scored coordinate descent; kept by rank.
+
+### `formant` (all regions; sustain exactly periodic)
+
+| Parameter | Range | Default | Meaning |
+|---|---|---|---|
+| `level_db` | −80…24 | 0 | layer level |
+| `f0` | 0…4000 Hz | 0 | source pitch (0: the wave's fundamental) |
+| `pw` | 0…0.5 | 0 | pulse width (0: band-limited saw) |
+| `noise`, `jitter` | 0…1, 0…100 cents | 0, 0 | aspiration in the voiced source; random pitch per period |
+| `breath_db` | −80…24 | −80 | noise through the formants under the layer envelope only (a laugh's "h") |
+| `vib_rate`, `vib_cents` | 0…12 Hz, 0…100 cents | 0, 0 | vibrato |
+| `syl_a`, `syl_d`, `syl_glide` | s, s, ±2400 cents | 0.005, 0.05, 0 | syllable attack, decay, pitch fall over the decay |
+
+Table `formants`: `[Hz, bandwidth Hz, dB]` (≤ 5) parallel band-passes. Table `syl`: `[s, dB, cents]` (≤ 16): the
+voiced source sounds only in syllables, each with its own envelope; no rows = throughout, under the layer envelope.
+Sustain is computed per harmonic (source spectrum × the formants' complex response, `Biquad::response`) on the loop
+grid, vibrato snapped to whole cycles per loop: exactly periodic, voiced only.
+
+Analysis (`gmfit/src/formant.rs`, design D4r): looped voices — LPC formants on the loop, the wave's pitch; unlooped
+voices — voiced syllables (5 ms envelope peaks, autocorrelation ≥ 0.5), pitch per syllable (subharmonic summation,
+octaves pulled to the median), pitch fall tracked on harmonic 1–2, formants from harmonic amplitudes when f0 > 250 Hz
+(LPC locks onto sparse harmonics), breath envelope fitted to the floor between syllables; formant gains and breath
+re-levelled against the original in 3 render passes.
 
 ## Commands
 
