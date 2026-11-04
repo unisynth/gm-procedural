@@ -302,3 +302,57 @@ fn modal_trill_modulates_frequency() {
     let (lo, hi) = (zc.iter().copied().fold(f32::MAX, f32::min), zc.iter().copied().fold(0.0, f32::max));
     assert!(hi / lo > 1.08 && hi / lo < 1.25, "swing {lo}..{hi}");
 }
+
+/// Spec "shaker" (task 7.5): event rate and resonance peaks within 10 % of the set values; sustain loops exactly.
+#[test]
+fn shaker_rate_resonances_and_loop() {
+    use crate::params::{Layer, Params};
+    use crate::render::WaveMeta;
+    use crate::schema::{family, Region};
+    let rate = 22050u32;
+    let one = WaveMeta { rate, len: 4 * 22050, unity: 60, fine: 0, looped: None };
+    let mut lay = Layer::new(family("shaker").unwrap(), Region::Whole);
+    lay.set("rate", 300.0);
+    lay.set("d", 30.0);
+    // Event rate: the generator's count over 4 s at a steady envelope.
+    let ctx = crate::render::Ctx { rate: rate as f32, len: one.len, lp: None, f0: 261.6, den: rate * 64, seed: 7, region: Region::Whole };
+    let ev = crate::fam::shaker::events(&ctx, &lay, one.len, &mut crate::math::Rng::new(7), false);
+    let per_s = ev.len() as f32 / 4.0;
+    assert!((per_s - 300.0).abs() < 30.0, "event rate {per_s}");
+    // Resonances: spectrum peaks at 1500 and 4000 Hz (±10 %).
+    lay.tables[0] = std::vec![1500.0, 20.0, 0.0, 4000.0, 20.0, 0.0];
+    let mut p = Params::default();
+    p.layers.push(lay.clone());
+    let x = render(&one, &p, 3);
+    assert!(x.iter().any(|v| v.abs() > 0.01), "silent");
+    let n = 16384;
+    let mut pw = std::vec![0.0f64; n / 2];
+    for seg in x.chunks_exact(n) {
+        for (k, v) in pw.iter_mut().enumerate().skip(1) {
+            let (mut re, mut im) = (0.0f64, 0.0f64);
+            let w = std::f64::consts::TAU * k as f64 / n as f64;
+            for (i, s) in seg.iter().enumerate().step_by(2) {
+                re += *s as f64 * (w * i as f64).cos();
+                im += *s as f64 * (w * i as f64).sin();
+            }
+            *v += re * re + im * im;
+        }
+    }
+    let hz = |k: usize| k as f32 * rate as f32 / n as f32;
+    let peak_in = |lo: f32, hi: f32| (1..n / 2).filter(|&k| hz(k) >= lo && hz(k) < hi).max_by(|a, b| pw[*a].total_cmp(&pw[*b])).map(hz).unwrap();
+    let (a, b) = (peak_in(800.0, 2500.0), peak_in(2500.0, 6000.0));
+    assert!((a - 1500.0).abs() < 150.0 && (b - 4000.0).abs() < 400.0, "peaks {a} {b}");
+    // Sustain: exactly periodic over the loop.
+    let looped = WaveMeta { rate, len: 6000, unity: 60, fine: 0, looped: Some((1000, 2000)) };
+    let mut lay = lay;
+    lay.region = Region::Sustain;
+    lay.set("fjit", 200.0);
+    lay.set("chirp", 1.0);
+    let mut p = Params::default();
+    p.layers.push(lay);
+    let x = render(&looped, &p, 5);
+    assert!(x.iter().any(|v| v.abs() > 0.01), "sustain silent");
+    for i in 1000..4000 {
+        assert!((x[i] - x[i + 2000]).abs() < 1e-5, "not periodic at {i}");
+    }
+}

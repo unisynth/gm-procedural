@@ -153,9 +153,10 @@ skip when `GM_DLS` is unset.
   on 2 choir/voice waves. Verify both score above their placeholder score.
 - [ ] 7.4 Add the `subtractive` family (2 oscillators, resonant filter with envelope), with tests for cutoff response.
   Check it on 3 synth lead/pad/bass waves. Verify all 3 score above their placeholder score.
-- [ ] 7.5 Add the `shaker` family (PhISEM collision events into ≤ 3 resonances), with tests that the event rate
+- [x] 7.5 Add the `shaker` family (PhISEM collision events into ≤ 3 resonances), with tests that the event rate
   and resonance peaks fall within 10 % of the set values. Check it on maracas, tambourine and applause. Verify all 3
-  score above their placeholder score.
+  score above their placeholder score. (Design D4o: maracas 230 0.66, tambourine 435 0.61, applause 26 0.48, stream
+  404 0.44, bubble 62 0.30; `gmfit/src/shaker.rs` analysis; modal hit times to the nearest sample.)
 - [ ] 7.6 Add the `fm` family (2–4 operators, index envelopes, feedback, stack or parallel), with tests that the
   sideband positions for a 1:1 and a 1:3.5 pair match theory. Check it on EP2, tubular bells and the bird tweet.
   Verify all 3 score above their placeholder score.

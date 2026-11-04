@@ -36,7 +36,7 @@ impl Hit {
         let warp = tau + (self.r - 1.0) * self.gt * (1.0 - e);
         let att = if self.ha > 0.0 && tau < self.ha { tau / self.ha } else { 1.0 };
         // Trill: f(τ) = f·(1 + d·cos 2π r τ) → phase f·(τ + d·sin(2π r τ)/(2π r)) in cycles.
-        let fm = if self.tr > 0.0 { self.td * sin_cycles(self.tr * tau) / (6.283_185 * self.tr) } else { 0.0 };
+        let fm = if self.tr > 0.0 { self.td * sin_cycles(self.tr * tau) / (core::f32::consts::TAU * self.tr) } else { 0.0 };
         let mut y = 0.0;
         let mut alive = false;
         for m in &self.modes {
@@ -54,8 +54,8 @@ impl Hit {
         if self.click <= 1e-4 {
             return;
         }
-        let a = exp(-6.283_185 * self.hp / rate);
-        let b = 1.0 - exp(-6.283_185 * self.lp / rate);
+        let a = exp(-core::f32::consts::TAU * self.hp / rate);
+        let b = 1.0 - exp(-core::f32::consts::TAU * self.lp / rate);
         let (mut px, mut hy, mut ly) = (0.0f32, 0.0f32, 0.0f32);
         let end = (i0 + (self.cd * 11.6 * rate) as usize).min(out.len());
         for (k, o) in out.iter_mut().enumerate().take(end).skip(i0) {
@@ -122,7 +122,9 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
             let pattern: Vec<(usize, f32)> = if tab.is_empty() {
                 (0..m).map(|i| (((i as f32 + off) * p) as usize, db(l.get("hit_db") * i as f32))).collect()
             } else {
-                tab.chunks(2).map(|r| (((r[0] * ctx.rate) as usize).min(len - 1), db(r[1]))).collect()
+                // Nearest sample, not floor: measured times are exact sample positions, and the file's 5-digit rounding
+                // would otherwise move a hit one sample (0.4 cycle at 8 kHz — up to 0.07 of score).
+                tab.chunks(2).map(|r| (((r[0] * ctx.rate + 0.5) as usize).min(len - 1), db(r[1]))).collect()
             };
             for (i, &(i0, g)) in pattern.iter().enumerate() {
                 for (k, o) in r.iter_mut().enumerate().skip(i0) {
@@ -161,7 +163,7 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
                 tab.chunks(2).map(|r| (t_start + r[0], db(r[1]))).collect()
             };
             for (t0, g) in pattern {
-                let i0 = (t0 * ctx.rate) as usize;
+                let i0 = (t0 * ctx.rate + 0.5) as usize;
                 if i0 >= n {
                     break;
                 }

@@ -126,6 +126,17 @@ static MODAL: [Scalar; 20] = with_env![
         s("trill_cents", 0.0, 1200.0, 0.0), // sustain hit train: first hit after the loop start, in periods
 ];
 
+static SHAKER: [Scalar; 13] = with_env![
+        s("level_db", -80.0, 24.0, 0.0),
+        s("rate", 1.0, 4000.0, 100.0), // collisions per second at full envelope
+        s("follow", 0.0, 1.0, 1.0),    // rate ∝ envelope^follow (0: steady rate, level still follows)
+        s("sdecay", 0.0001, 0.2, 0.003), // decay of each collision's noise burst (s)
+        s("gjit", 0.0, 24.0, 6.0),     // per-event level spread ±dB
+        s("fjit", 0.0, 1200.0, 0.0),   // per-event resonance detune ±cents
+        s("chirp", -4.0, 4.0, 0.0),    // per-event resonance sweep (octaves; bubbles rise)
+        s("chirp_t", 0.0005, 0.5, 0.01),
+];
+
 pub const FAMILIES: &[Family] = &[
     // Harmonic table `harm` (dB per harmonic 1..K), optional `phase` (cycles, harmonics 1..P).
     Family {
@@ -145,7 +156,6 @@ pub const FAMILIES: &[Family] = &[
         ],
         periodic: true,
     },
-    // `bands`: [centre Hz, Q, gain dB].
     // `bands`: [centre Hz, Q, gain dB] band-passes summed in parallel (≤ 24: third octaves for a cymbal wash).
     Family { name: "noise", scalars: &NOISE, tables: &[Table { name: "bands", width: 3, max_rows: 24 }], periodic: true },
     // `modes`: extra membrane modes [ratio to body frequency, gain dB, decay s].
@@ -161,6 +171,8 @@ pub const FAMILIES: &[Family] = &[
         tables: &[Table { name: "modes", width: 4, max_rows: 32 }, Table { name: "hits", width: 2, max_rows: 32 }],
         periodic: true,
     },
+    // `res`: [Hz, Q, gain dB] resonances every collision rings (PhISEM, ≤ 3).
+    Family { name: "shaker", scalars: &SHAKER, tables: &[Table { name: "res", width: 3, max_rows: 3 }], periodic: true },
 ];
 
 pub fn family(name: &str) -> Option<usize> {

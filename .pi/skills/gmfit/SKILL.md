@@ -62,12 +62,14 @@ render it with `-p`. `render` exits with code 2 when any flag is set (even `pitc
 1. `render`: read the sheet (waveforms, spectrograms, difference) and the terms. Large `d_onset` → attack; `d_env` →
    loudness contour; `d_loop` → loop spectrum; `d_spec` → overall.
 2. Run the pipeline. Keep the result if it is better, and restore the backup if it is not.
-3. Listen, or let the user listen (play each wave at its bank speed, `report.json` `play.speed`, with
+3. Versions are kept by rank = score − 0.1 × character flags (`lines`, `transient_off`, `peaks_off`).
+   `GMFIT_BULK_DUMP=<dir>` keeps every bulk result for listening, saved or not.
+4. Listen, or let the user listen (play each wave at its bank speed, `report.json` `play.speed`, with
    `preservesPitch = false`; at speed 1 many kit and SFX waves sound too fast): rebuild `build/gm/pilot/index.html` rows (orig/gen/sheet), serve the folder with
    `serve_mockup` and open the **localhost** URL on the canvas. A `kind:file` canvas of that page failed with "live-server
    target not found".
-4. For what is heard but not scored, **measure it** (below), fix the analysis or generator, and re-run.
-5. Test, run `report --check`, `report --baseline`, document (design D4x, tasks, pilot research), and commit.
+5. For what is heard but not scored, **measure it** (below), fix the analysis or generator, and re-run.
+6. Test, run `report --check`, `report --baseline`, document (design D4x, tasks, pilot research), and commit.
 
 ## Measure what the score averages away
 
@@ -95,6 +97,9 @@ Thresholds are provisional (add-wav-resynthesis design D5). Treat OFF as "listen
 | cymbal/bell loop with the wrong peaks | strongest loop peaks | `modal` sustain: sparse loop bins + residual noise |
 | whistle "pulses"; trill / pea rattle | wavelet flutter (dB) vs pitch movement (cents, rate) of the strongest partial; score `d_mod`, flag `mod_off` | `modal` `trill_hz`/`trill_cents` (FM), not beating modes (design D4m) |
 | strikes missing in a rattle | strikes inside the resonance band (wavelet) | `modal` `hits` table from `wavelet::band_onsets` |
+| jingles, maracas, applause, stream, bubbles sound smooth; flag `transient_off` | percussive share (`desc.perc`) | `shaker` (PhISEM): alone, or added to the model with 30–70 % of the energy (design D4o) |
+| cymbal/hat loop rings as tones; flag `lines` | fine contrast where the original is a wash (`desc.contrast`) | `analyze::noise_loop`: prominent partials + third-octave noise (design D4n) |
+| modes smeared; flag `peaks_off` | peaks per frame (`desc.peaks`) | fewer, cleaner `modal` modes |
 | rumble | power below 0.7·f0 | noise `hp` |
 | too bright / dull top | 500 Hz-band levels 6–11 kHz | noise `lp`, harmonic tail |
 | attack click / wrong decay / cut at the end | level per 50 ms × band (`tf` grid); a one-shot's last 10 ms vs the original | `tf`, `env` (one-shot end point, design D4j), drum noise layer |

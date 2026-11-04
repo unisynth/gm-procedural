@@ -454,6 +454,40 @@ reads 15–25 cents of measurement wobble at a random rate — Fingered Bass 240
 in drums pass 3 unnoticed (the baseline was rewritten). Now ≥ 50 cents (whistles 93–119): 240 → 0.82, 27 waves up,
 none down.
 
+### D4o. `shaker` family (PhISEM) and hit-time rounding (task 7.5)
+
+Tambourine 435, stream 404 and bubble 62 carried `transient_off`: the originals are made of many tiny collisions,
+the models were smooth. `gmgen/src/fam/shaker.rs` implements Cook's PhISEM: Bernoulli collision events at `rate` ×
+envelope^`follow`, each a noise burst (`sdecay`) ringing ≤ 3 band-pass resonances, with per-event level spread
+(`gjit`), detune (`fjit`) and an upward sweep (`chirp`, water drops). Sustain renders one loop-length event pattern
+with wrapped rings (exactly periodic). The generator's event count is tested (rate within 10 %), as are the resonance
+peaks (10 %) and loop periodicity.
+
+`gmfit/src/shaker.rs` measures collisions on a 0.5 ms envelope (0.25 ms frames counted a burst's own fluctuations:
+2.5× the true rate), ≤ 3 resonances (peak-picking with each band-pass response removed), burst decay and level
+spread. Candidates: rate ×0.5/1/2, chirp 0/+1 oct, detune 0/300 cents, Q ×1/0.25 (jingles click broadband rather
+than ring), alone or added to the current model with 30/50/70 % of the energy (the model's layers give it up; levelling
+to the residual fails for noise: independent noises never cancel). `analyze` keeps the best by rank.
+
+| Wave | Before | After |
+|---|---|---|
+| maracas 230 | 0.64 `lines` | 0.66 shaker, no flags |
+| tambourine 435 | 0.56 `transient_off` (modal) | 0.61 modal + shaker, no flags |
+| applause 26 | 0.47 | 0.48 shaker |
+| stream 404 | 0.38 `env_off` `transient_off` | 0.44 shaped noise + shaker, no flags |
+| bubble 62 | 0.14 `transient_off` | 0.30 shaker (transient share 0.64 vs 0.65) |
+| guiro 228 | 0.40 | 0.32 shaker (fewer flags) |
+
+Drums pass 4 (whole drum category + applause/stream/bubble/seashore with shaker, noise loop, rounding fix): 26 of 95
+improved, no rank regressions; the shaker is in 17 waves (490 0.17 → 0.55, 202 0.05 → 0.23, 445 0.21 → 0.38, 195
+0.17 → 0.32, stream 404 → 0.48); crash 106 0.56 → 0.66 and open hat 272 0.51 → 0.65 (noise loops refitted).
+Report: A 6, B 23, C 466, mean 0.161.
+
+Hit-time rounding: measured hit times are exact sample positions; `modal` floored `t·rate`, so the file's 5-digit
+rounding moved a hit one sample (0.4 cycle at 8 kHz) and cost up to 0.07 (tambourine 435 0.636 in memory → 0.562 on
+disk; whistle 229 0.48 → 0.39). Now nearest sample: 229 holds 0.48 on disk. `bulk` gained `GMFIT_BULK_DUMP=<dir>`
+(every pipeline result, kept or not).
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

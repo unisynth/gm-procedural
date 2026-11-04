@@ -50,6 +50,7 @@ pub mod modal;
 pub mod wavelet;
 pub mod priors;
 pub mod score;
+pub mod shaker;
 pub mod sheet;
 
 use gmgen::params::Params;

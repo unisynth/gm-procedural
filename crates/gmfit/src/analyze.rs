@@ -128,6 +128,8 @@ pub(crate) fn open_for_fit(l: &mut Layer) {
         "drum" => &["level_db", "freq", "ratio", "sweep_t", "decay", "a", "shape", "drive", "click_db", "click_decay"],
         "metal" => &["level_db", "base", "bp", "q", "hp", "a", "d", "d2", "split", "noise"],
         "modal" => &["level_db", "ha", "glide", "glide_t", "period", "hit_db", "click_db", "click_decay", "click_hp"],
+        // `rate`, `chirp`, `fjit` stay structural: each change redraws the event pattern (a noisy objective).
+        "shaker" => &["level_db", "a", "h", "d", "s", "sdecay", "gjit"],
         _ => &[],
     };
     for n in names {
@@ -944,6 +946,60 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
         if let Some((sc, q)) = best.filter(|b| b.0 > base) {
             p = q;
             note = format!("analyze: modal (tonal {tonal:.2}, {sc:.3} vs prior {base:.3})");
+        }
+    }
+    // Shaker (design D4o): PhISEM candidates for sounds made of many tiny collisions, kept by rank (a smooth model
+    // that scores well but carries `transient_off` loses to one that has the clicks).
+    {
+        let cur = crate::rank_of(orig, i, &p);
+        let mut alone: Vec<(f32, Params)> =
+            crate::shaker::candidates(i, orig, m).into_iter().map(|q| (crate::rank_of(orig, i, &q), q)).collect();
+        alone.sort_by(|a, b| b.0.total_cmp(&a.0));
+        // Also the current model + a shaker layer for its clicks (a tambourine: membrane hit + jingles; a stream:
+        // the shaped noise + droplets). The shaker takes 30/50/70 % of the original's energy and the model's layers
+        // give it up — not levelled to the residual: two independent noises never cancel, so a noise model's
+        // residual is as loud as the sound.
+        let target = rms(orig);
+        let mut combos: Vec<(f32, Params)> = Vec::new();
+        if p.layers.len() < gmgen::schema::MAX_LAYERS {
+            for (_, q) in alone.iter().take(3) {
+                for share in [0.3f32, 0.5, 0.7] {
+                    let g = share;
+                    let mut c = p.clone();
+                    for l in &mut c.layers {
+                        let v = l.get("level_db");
+                        l.set("level_db", (v + 10.0 * (1.0 - share).log10()).clamp(-80.0, 24.0));
+                    }
+                    let mut l = q.layers[0].clone();
+                    l.set("level_db", -20.0);
+                    c.layers.push(l);
+                    let k = c.layers.len() - 1;
+                    calibrate(i, &mut c, k, target * share.sqrt(), 0..orig.len());
+                    if c.validate().is_ok() {
+                        let r = crate::rank_of(orig, i, &c);
+                        if std::env::var_os("GMFIT_TRACE").is_some() {
+                            let e = crate::evaluate(orig, i, &c).0;
+                            eprintln!("shaker combo share {g}: rank {r:.4} score {:.4} flags {:?} perc {:?}", e.score, e.flags, e.desc.map(|d| d.perc));
+                        }
+                        combos.push((r, c));
+                    }
+                }
+            }
+        }
+        let best = alone
+            .into_iter()
+            .chain(combos)
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        if std::env::var_os("GMFIT_TRACE").is_some() {
+            eprintln!("shaker: current rank {cur:.4}, best shaker {:?}", best.as_ref().map(|b| b.0));
+        }
+        if let (Ok(path), Some((_, q))) = (std::env::var("GMFIT_SHAKER_DUMP"), best.as_ref()) {
+            let wf = WaveFile { wave: i as u32, params: q.clone(), placeholder: false, note: String::new() };
+            let _ = std::fs::write(path, gmgen::params_json::to_json(&wf));
+        }
+        if let Some((r, q)) = best.filter(|b| b.0 > cur) {
+            p = q;
+            note = format!("analyze: shaker (rank {r:.3} vs {cur:.3})");
         }
     }
     WaveFile { wave: i as u32, params: p, placeholder: false, note: note.chars().take(80).collect() }

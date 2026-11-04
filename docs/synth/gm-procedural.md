@@ -171,6 +171,26 @@ periodic.
 
 Further families (`ks`, `formant`, `subtractive`, `shaker`, `fm`) arrive in task group 7.
 
+### `shaker` (periodic; PhISEM)
+
+| Parameter | Range | Default | Meaning |
+|---|---|---|---|
+| `level_db` | −80…24 | 0 | layer level |
+| `rate` | 1…4000 | 100 | collisions per second at full envelope |
+| `follow` | 0…1 | 1 | rate ∝ envelope^follow (0: steady rate, level still follows) |
+| `sdecay` | 0.0001…0.2 s | 0.003 | decay of each collision's noise burst |
+| `gjit` | 0…24 dB | 6 | per-collision level spread ± |
+| `fjit` | 0…1200 cents | 0 | per-collision resonance detune ± |
+| `chirp`, `chirp_t` | ±4 oct, 0.0005…0.5 s | 0, 0.01 | per-collision resonance sweep (bubbles rise) |
+
+Table `res`: `[Hz, Q, gain dB]` (≤ 3) band-pass resonances every collision rings; none = the bare burst.
+- Whole/attack: free-running Bernoulli events, each at the envelope level of its onset.
+- Sustain: one loop-length event pattern, rings wrapped circularly, tiled — exactly periodic.
+
+Analysis (`gmfit/src/shaker.rs`, design D4o): collision onsets on a 0.5 ms envelope (rate, burst decay, level
+spread), ≤ 3 resonances by peak-picking the smoothed spectrum, one-shot envelope; candidates rate ×0.5/1/2, chirp
+0/+1, detune 0/300 cents, Q ×1/0.25, alone or added to the current model taking 30/50/70 % of the energy; kept by rank.
+
 ## Commands
 
 ```bash

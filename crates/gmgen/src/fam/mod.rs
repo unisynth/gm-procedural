@@ -4,3 +4,4 @@ pub mod drum;
 pub mod metal;
 pub mod modal;
 pub mod noise;
+pub mod shaker;

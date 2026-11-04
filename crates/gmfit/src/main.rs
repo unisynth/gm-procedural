@@ -216,6 +216,11 @@ fn main() {
                         };
                         let _g = write.lock().unwrap();
                         let wf = gmfit::load_wave(i).unwrap_or_else(|e| die(e));
+                        // GMFIT_BULK_DUMP=<dir>: keep every pipeline result, written or not (listening, diagnosis).
+                        if let Ok(dir) = std::env::var("GMFIT_BULK_DUMP") {
+                            let d = gmgen::params_json::WaveFile { params: p.clone(), ..wf.clone() };
+                            let _ = std::fs::write(format!("{dir}/{i:03}.json"), gmgen::params_json::to_json(&d));
+                        }
                         let before = gmfit::fit::score_of(&o, i, &wf.params);
                         let kept = gmfit::keep_if_better(&orig, i, gmgen::params_json::WaveFile { params: p, ..wf }, after)
                             .unwrap_or_else(|e| die(e));
