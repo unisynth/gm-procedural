@@ -18,6 +18,10 @@ const HOP: usize = 256;
 /// Noise-floor thresholds (same-texture surrogates).
 pub const AUDIBLE: f32 = 0.05;
 pub const MOD_AUDIBLE: f32 = 0.02;
+/// Frame-aligned span at the start (s); level distributions after it.
+const ATTACK_S: f32 = 0.15;
+/// Tolerance factor on the original's fluctuation for the distribution part (aligned part: 1.4).
+const DIST_TOL: f32 = 0.5;
 
 fn bark(f: f32) -> f32 {
     13.0 * (0.00076 * f).atan() + 3.5 * (f / 7500.0).powi(2).atan()
@@ -167,15 +171,30 @@ pub fn hear(orig: &[f32], copy: &[f32], rate: f32) -> Heard {
     let q = &a.quiet;
     let mut total = 0.0f32;
     let (mut add, mut miss) = (vec![vec![0.0f32; nb]; n], vec![vec![0.0f32; nb]; n]);
-    for t in 0..n {
-        for j in 0..nb {
+    // Attack (first `ATTACK_S`): frame-aligned — when it happens is heard. After it: per band, the level distribution
+    // (sorted levels of both paired by rank) — a texture is heard by its statistics, not by when each grain falls
+    // (McDermott & Simoncelli 2011); a reseeded shaker differs frame by frame by up to 0.9 of the loudness. Each pair is
+    // filed at the original frame holding that rank, so locations read "when the original is that loud".
+    let t_att = ((ATTACK_S * rate / HOP as f32) as usize).min(n);
+    let mut pairs: Vec<Vec<(usize, f32, f32)>> = vec![Vec::with_capacity(n); nb]; // (frame, la, lb)
+    for (j, pj) in pairs.iter_mut().enumerate() {
+        pj.extend((0..t_att).map(|t| (t, la[t][j], lb[t][j])));
+        let mut ia: Vec<usize> = (t_att..n).collect();
+        ia.sort_by(|x, y| la[*x][j].total_cmp(&la[*y][j]));
+        let mut vb: Vec<f32> = (t_att..n).map(|t| lb[t][j]).collect();
+        vb.sort_by(f32::total_cmp);
+        pj.extend(ia.iter().zip(&vb).map(|(&t, &v)| (t, la[t][j], v)));
+    }
+    for (j, pj) in pairs.iter().enumerate() {
+        for &(t, va, vb) in pj {
             let ea = a.exc[t][j];
             total += loud(ea, q[j]);
-            let d = lb[t][j] - la[t][j];
-            if d > tol[t][j] {
-                add[t][j] = loud(ea * (10f32.powf((d - tol[t][j]) / 10.0) - 1.0), q[j]);
-            } else if -d > tol[t][j] {
-                miss[t][j] = loud(ea * (1.0 - 10f32.powf(-(-d - tol[t][j]) / 10.0)), q[j]);
+            let tl = if t < t_att { tol[t][j] } else { 3.0 + DIST_TOL / 1.4 * (tol[t][j] - 3.0) };
+            let d = vb - va;
+            if d > tl {
+                add[t][j] = loud(ea * (10f32.powf((d - tl) / 10.0) - 1.0), q[j]);
+            } else if -d > tl {
+                miss[t][j] = loud(ea * (1.0 - 10f32.powf(-(-d - tl) / 10.0)), q[j]);
             }
         }
     }

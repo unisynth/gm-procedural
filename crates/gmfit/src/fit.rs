@@ -88,11 +88,21 @@ fn vars(p: &Params, only: Option<&[String]>) -> Vec<Var> {
     v
 }
 
-/// Score of `p` for wave `i` (1 = identical).
+/// Fit objective of `p` for wave `i` (1 = identical): plain score − `HEAR_PENALTY` × audible excess of the hearing
+/// model (design D4p; 0 when the copy is as close as another take of the same noise, so it only steers fits a
+/// listener would hear as different — e.g. a harmonic correction lifting the highs of an unpitched loop). No
+/// descriptors: too slow for the fit loop.
 pub fn score_of(orig: &[f32], i: usize, p: &Params) -> f32 {
-    // Plain score (no descriptors: too slow for the fit loop).
     let m = gmgen::bank::meta(i).expect("wave meta");
-    crate::score::score(orig, &gmgen::render_wave(i, p), &m).score
+    let synth = gmgen::render_wave(i, p);
+    let s = crate::score::score(orig, &synth, &m);
+    if s.flags.contains(&"nan") {
+        return s.score;
+    }
+    let speed = crate::play_speed(i).1;
+    let (a, b) = (crate::audio::played(orig, &m, 1.0), crate::audio::played(&synth, &m, 1.0));
+    let h = crate::hear::hear(&crate::hear::at_speed(&a, speed), &crate::hear::at_speed(&b, speed), m.rate as f32);
+    s.score - crate::HEAR_PENALTY * crate::hear_excess([h.added, h.missing, h.moddiff])
 }
 
 fn par_scores(orig: &[f32], i: usize, ps: &[Params]) -> Vec<f32> {
