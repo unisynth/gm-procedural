@@ -1,7 +1,7 @@
 //! Wave rendering: layer regions (design D3), a final soft knee above 0.9 (never full scale), shared envelope, exact integer phasors, biquads, and the dispatch to
 //! the family modules in `fam/`.
 use crate::fam;
-use crate::math::{self, exp, sin_cycles};
+use crate::math::{self, cos_cycles, exp, sin_cycles};
 use crate::params::{Layer, Params};
 use crate::schema::{Region, FAMILIES};
 use alloc::vec;
@@ -151,6 +151,15 @@ impl Biquad {
         self.a1 = -2.0 * cs / a0;
         self.a2 = (1.0 - alpha) / a0;
     }
+    /// Complex response (re, im) at `w` cycles per sample.
+    pub fn response(&self, w: f32) -> (f32, f32) {
+        // z^{-1} = e^{-i2πw}
+        let (c1, s1, c2, s2) = (cos_cycles(w), -sin_cycles(w), cos_cycles(2.0 * w), -sin_cycles(2.0 * w));
+        let (nr, ni) = (self.b0 + self.b1 * c1 + self.b2 * c2, self.b1 * s1 + self.b2 * s2);
+        let (dr, di) = (1.0 + self.a1 * c1 + self.a2 * c2, self.a1 * s1 + self.a2 * s2);
+        let d = dr * dr + di * di;
+        ((nr * dr + ni * di) / d, (ni * dr - nr * di) / d)
+    }
     #[inline]
     pub fn run(&mut self, x: f32) -> f32 {
         let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2 - self.a1 * self.y1 - self.a2 * self.y2;
@@ -204,6 +213,7 @@ pub fn render(meta: &WaveMeta, p: &Params, seed: u32) -> Vec<f32> {
             "modal" => fam::modal::render(&ctx, layer, &mut buf),
             "shaker" => fam::shaker::render(&ctx, layer, &mut buf),
             "fm" => fam::fm::render(&ctx, layer, &mut buf),
+            "formant" => fam::formant::render(&ctx, layer, &mut buf),
             _ => {}
         }
         if let (Region::Attack, Some((s, _))) = (region, lp) {

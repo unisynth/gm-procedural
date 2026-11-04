@@ -148,6 +148,20 @@ static FM: [Scalar; 13] = with_env![
         s("cyc_phase", 0.0, 1.0, 0.0),     // cycle phase at sample 0
 ];
 
+static FORMANT: [Scalar; 16] = with_env![
+        s("level_db", -80.0, 24.0, 0.0),
+        s("f0", 0.0, 4000.0, 0.0),          // source pitch (0: the wave's fundamental)
+        s("pw", 0.0, 0.5, 0.0),             // pulse width (0: saw)
+        s("noise", 0.0, 1.0, 0.0),          // aspiration mixed into the voiced source
+        s("jitter", 0.0, 100.0, 0.0),       // random pitch per period ±cents
+        s("breath_db", -80.0, 24.0, -80.0), // noise through the formants, following the layer envelope only
+        s("vib_rate", 0.0, 12.0, 0.0),
+        s("vib_cents", 0.0, 100.0, 0.0),
+        s("syl_a", 0.0005, 0.5, 0.005),     // syllable attack
+        s("syl_d", 0.002, 2.0, 0.05),       // syllable decay (and pitch-fall time)
+        s("syl_glide", -2400.0, 2400.0, 0.0), // cents each syllable falls over `syl_d`
+];
+
 pub const FAMILIES: &[Family] = &[
     // Harmonic table `harm` (dB per harmonic 1..K), optional `phase` (cycles, harmonics 1..P).
     Family {
@@ -190,6 +204,13 @@ pub const FAMILIES: &[Family] = &[
         name: "fm",
         scalars: &FM,
         tables: &[Table { name: "ops", width: 4, max_rows: 4 }, Table { name: "cyc", width: 2, max_rows: 32 }],
+        periodic: true,
+    },
+    // `formants`: [Hz, bandwidth Hz, dB] parallel band-passes (≤ 5). `syl`: syllables [s from start, dB, cents].
+    Family {
+        name: "formant",
+        scalars: &FORMANT,
+        tables: &[Table { name: "formants", width: 3, max_rows: 5 }, Table { name: "syl", width: 3, max_rows: 16 }],
         periodic: true,
     },
 ];

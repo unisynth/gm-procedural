@@ -31,6 +31,11 @@ fn analytic(x: &[f32], rate: f32, lo: f32, hi: f32) -> Vec<Complex32> {
     b
 }
 
+/// `analytic` for other analyses (formant pitch tracks).
+pub fn analytic_pub(x: &[f32], rate: f32, lo: f32, hi: f32) -> Vec<Complex32> {
+    analytic(x, rate, lo, hi)
+}
+
 /// Frequency (Hz, amplitude-weighted over ±`w` samples) and amplitude tracks of the analytic signal `z`.
 fn tracks(z: &[Complex32], rate: f32, w: usize) -> (Vec<f32>, Vec<f32>) {
     let n = z.len();

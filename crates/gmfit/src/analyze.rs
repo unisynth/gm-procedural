@@ -132,6 +132,7 @@ pub(crate) fn open_for_fit(l: &mut Layer) {
         "shaker" => &["level_db", "a", "h", "d", "s", "sdecay", "gjit"],
         // Operator tables and the cycle stay structural (analysis sets them).
         "fm" => &["level_db", "a", "h", "d", "s", "glide", "glide_t", "feedback"],
+        "formant" => &["level_db", "a", "h", "d", "s", "noise", "jitter", "breath_db", "syl_a", "syl_d", "syl_glide", "vib_rate", "vib_cents"],
         _ => &[],
     };
     for n in names {
@@ -1004,10 +1005,13 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
             note = format!("analyze: shaker (rank {r:.3} vs {cur:.3})");
         }
     }
-    // FM (task 7.6, design D4q): a tweet train (chirp cycle on a sine) and operator presets, kept by rank.
+    // FM (task 7.6, design D4q): a tweet train (chirp cycle on a sine) and operator presets; formant (7.3, D4r);
+    // kept by rank.
     {
         let cur = crate::rank_of(orig, i, &p);
-        let cands = crate::fm::candidates(i, orig, m);
+        let mut cands = crate::fm::candidates(i, orig, m);
+        // Formant (task 7.3, design D4r): voices — a laugh's syllables, a choir's vowel.
+        cands.extend(crate::formant::candidates(i, orig, m, &p.wave));
         if let Ok(dir) = std::env::var("GMFIT_FM_DUMP") {
             for (c, q) in cands.iter().enumerate() {
                 let wf = WaveFile { wave: i as u32, params: q.clone(), placeholder: false, note: String::new() };

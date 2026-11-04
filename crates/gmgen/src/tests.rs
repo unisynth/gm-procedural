@@ -477,3 +477,82 @@ fn fm_sidebands_cycle_and_loop() {
         assert!((x[i] - x[i + 1486]).abs() < 1e-4, "feedback: not periodic at {i}: {} vs {}", x[i], x[i + 1486]);
     }
 }
+
+/// Harmonic amplitudes of `x[at..at+n]` at k·f0 (k = 1..), by direct projection.
+fn harmonics(x: &[f32], at: usize, n: usize, f0: f64, rate: f64, kmax: usize) -> std::vec::Vec<f64> {
+    (1..=kmax)
+        .map(|k| {
+            let w = std::f64::consts::TAU * k as f64 * f0 / rate;
+            let (mut re, mut im) = (0.0f64, 0.0f64);
+            for i in 0..n {
+                re += x[at + i] as f64 * (w * i as f64).cos();
+                im += x[at + i] as f64 * (w * i as f64).sin();
+            }
+            (re * re + im * im).sqrt() * 2.0 / n as f64
+        })
+        .collect()
+}
+
+/// Spec "formant" (task 7.3): the spectral envelope peaks at the formants (whole and sustain), syllables sound at
+/// their table times, sustain loops exactly.
+#[test]
+fn formant_peaks_syllables_and_loop() {
+    use crate::params::{Layer, Params};
+    use crate::render::WaveMeta;
+    use crate::schema::{family, Region};
+    let rate = 22050u32;
+    let formants = std::vec![600.0f32, 80.0, 0.0, 1400.0, 100.0, 0.0, 2600.0, 150.0, 0.0];
+    let check = |x: &[f32], at: usize, n: usize, f0: f64, what: &str| {
+        let h = harmonics(x, at, n, f0, rate as f64, (3500.0 / f0) as usize);
+        for (lo, hi, want) in [(400.0, 900.0, 600.0), (1100.0, 1900.0, 1400.0), (2200.0, 3200.0, 2600.0)] {
+            let k = (1..=h.len()).filter(|k| (lo..hi).contains(&(*k as f64 * f0))).max_by(|a, b| h[a - 1].total_cmp(&h[b - 1])).unwrap();
+            let got = k as f64 * f0;
+            assert!((got / want - 1.0).abs() < 0.1, "{what}: formant {want} peaks at {got} Hz ({h:?})");
+        }
+    };
+    // Whole: saw at 100 Hz.
+    let meta = WaveMeta { rate, len: 22050, unity: 60, fine: 0, looped: None };
+    let mut l = Layer::new(family("formant").unwrap(), Region::Whole);
+    l.set("f0", 100.0);
+    l.set("d", 30.0);
+    l.tables[0] = formants.clone();
+    let mut p = Params::default();
+    p.layers.push(l.clone());
+    let x = render(&meta, &p, 1);
+    assert!(x.iter().any(|v| v.abs() > 0.01), "silent");
+    check(&x, 4410, 8820, 100.0, "whole");
+    // Sustain: harmonics on the loop grid (loop 2205 = 10 periods of 100 Hz), exactly periodic, same peaks.
+    let looped = WaveMeta { rate, len: 8000, unity: 60, fine: 0, looped: Some((1000, 2205)) };
+    let mut s = l.clone();
+    s.region = Region::Sustain;
+    s.set("vib_rate", 5.0);
+    s.set("vib_cents", 20.0);
+    let mut p = Params::default();
+    p.layers.push(s.clone());
+    let x = render(&looped, &p, 1);
+    for i in 1000..5000 {
+        assert!((x[i] - x[i + 2205]).abs() < 1e-4, "not periodic at {i}");
+    }
+    s.set("vib_cents", 0.0);
+    let mut p = Params::default();
+    p.layers.push(s);
+    let x = render(&looped, &p, 1);
+    check(&x, 1000, 2205, 100.0, "sustain");
+    // Syllables at 0.1, 0.3, 0.5 s: 10 ms envelope peaks there, quiet halfway between.
+    let mut l = l;
+    l.tables[1] = std::vec![0.1, 0.0, 0.0, 0.3, 0.0, 0.0, 0.5, -6.0, 0.0];
+    l.set("syl_a", 0.005);
+    l.set("syl_d", 0.03);
+    let mut p = Params::default();
+    p.layers.push(l);
+    let x = render(&meta, &p, 1);
+    let env: std::vec::Vec<f32> = x.chunks(220).map(|c| (c.iter().map(|v| v * v).sum::<f32>() / 220.0).sqrt()).collect();
+    let top = env.iter().copied().fold(0.0f32, f32::max);
+    for t in [0.1f32, 0.3, 0.5] {
+        let k = (t * 100.0) as usize;
+        let near = env[k..k + 4].iter().copied().fold(0.0f32, f32::max);
+        assert!(near > 0.4 * top, "no syllable at {t} s");
+        let mid = env[k + 10];
+        assert!(mid < 0.1 * near, "not quiet after the syllable at {t} s");
+    }
+}

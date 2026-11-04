@@ -2,6 +2,7 @@
 pub mod additive;
 pub mod drum;
 pub mod fm;
+pub mod formant;
 pub mod metal;
 pub mod modal;
 pub mod noise;

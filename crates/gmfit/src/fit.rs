@@ -96,8 +96,9 @@ pub fn score_of(orig: &[f32], i: usize, p: &Params) -> f32 {
     let m = gmgen::bank::meta(i).expect("wave meta");
     let synth = gmgen::render_wave(i, p);
     let s = crate::score::score(orig, &synth, &m);
+    // A broken render must lose to every real one (with the hearing penalty those go below 0).
     if s.flags.contains(&"nan") {
-        return s.score;
+        return -1.0;
     }
     let speed = crate::play_speed(i).1;
     let (a, b) = (crate::audio::played(orig, &m, 1.0), crate::audio::played(&synth, &m, 1.0));
@@ -110,7 +111,7 @@ fn par_scores(orig: &[f32], i: usize, ps: &[Params]) -> Vec<f32> {
     std::thread::scope(|sc| {
         let hs: Vec<_> = ps
             .chunks(ps.len().div_ceil(threads).max(1))
-            .map(|c| sc.spawn(move || c.iter().map(|p| if p.validate().is_ok() { score_of(orig, i, p) } else { 0.0 }).collect::<Vec<_>>()))
+            .map(|c| sc.spawn(move || c.iter().map(|p| if p.validate().is_ok() { score_of(orig, i, p) } else { -1.0 }).collect::<Vec<_>>()))
             .collect();
         hs.into_iter().flat_map(|h| h.join().unwrap()).collect()
     })
