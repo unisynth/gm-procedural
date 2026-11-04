@@ -370,6 +370,28 @@ mod tests {
         assert!(h.added + h.missing < AUDIBLE && h.moddiff < MOD_AUDIBLE, "{h:?}");
     }
 
+    /// Sparse decaying 1.9 kHz pings at random times after the attack (a bubble texture).
+    fn pings(seed: u32, gain: f32) -> Vec<f32> {
+        let r = noise(64, seed);
+        let mut x = vec![0.0f32; 22050];
+        for (k, v) in r.iter().take(40).enumerate() {
+            let at = 3400 + ((v * 0.5 + 0.5) * 18000.0) as usize;
+            let amp = gain * (0.5 + 0.5 * r[(k + 40) % 64].abs());
+            for t in 0..2000.min(22050 - at) {
+                x[at + t] += amp * (-(t as f32) / 400.0).exp() * (std::f32::consts::TAU * 1900.0 * t as f32 / 22050.0).sin();
+            }
+        }
+        x
+    }
+
+    #[test]
+    fn texture_heard_by_statistics_not_grain_times() {
+        let h = hear(&pings(3, 0.3), &pings(77, 0.3), 22050.0);
+        assert!(h.added + h.missing < AUDIBLE, "{h:?}");
+        let quiet = hear(&pings(3, 0.3), &pings(77, 0.1), 22050.0);
+        assert!(quiet.missing > AUDIBLE, "{quiet:?}");
+    }
+
     #[test]
     fn missing_tone_is_found_where_it_is() {
         let base = lowpass(&noise(22050, 3));
