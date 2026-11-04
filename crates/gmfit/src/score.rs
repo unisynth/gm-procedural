@@ -48,6 +48,8 @@ pub struct Score {
     /// Character descriptors (`describe`, design D4n): fine contrast gen − orig (dB), percussive share
     /// (orig, gen), peaks per frame (orig, gen). Reported and flagged, not scored.
     pub desc: Option<Desc>,
+    /// Hearing-model difference at bank speed (design D4p): added, missing, moddiff. Ranked, not scored.
+    pub heard: Option<[f32; 3]>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -67,7 +69,8 @@ impl Score {
     pub fn json(&self) -> Value {
         json!({"score": r4(self.score), "d_spec": r4(self.d_spec), "d_env": r4(self.d_env), "d_loop": r4(self.d_loop), "d_onset": r4(self.d_onset),
                "d_per": r4(self.d_per), "d_mod": r4(self.d_mod), "flags": self.flags, "f0_orig": self.f0_orig.map(r4), "f0_gen": self.f0_gen.map(r4),
-               "desc": self.desc.map(|d| json!({"contrast_orig": r4(d.contrast_orig), "contrast": r4(d.contrast), "perc": [r4(d.perc.0), r4(d.perc.1)], "peaks": [r4(d.peaks.0), r4(d.peaks.1)]}))})
+               "desc": self.desc.map(|d| json!({"contrast_orig": r4(d.contrast_orig), "contrast": r4(d.contrast), "perc": [r4(d.perc.0), r4(d.perc.1)], "peaks": [r4(d.peaks.0), r4(d.peaks.1)]})),
+               "hear": self.heard.map(|h| [r4(h[0]), r4(h[1]), r4(h[2])])})
     }
 
     /// Adds the character descriptors over the first second played, with their flags: `lines` (copy ≥ 6 dB
@@ -408,7 +411,7 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
     let (a, b) = (played(orig, m, PLAYED_SECS), played(synth, m, PLAYED_SECS));
     let mut flags = Vec::new();
     if synth.iter().any(|v| !v.is_finite()) {
-        return Score { score: 0.0, d_spec: 99.0, d_env: 99.0, d_loop: 99.0, d_onset: 99.0, d_per: 1.0, d_mod: 1.0, flags: vec!["nan"], f0_orig: None, f0_gen: None, desc: None };
+        return Score { score: 0.0, d_spec: 99.0, d_env: 99.0, d_loop: 99.0, d_onset: 99.0, d_per: 1.0, d_mod: 1.0, flags: vec!["nan"], f0_orig: None, f0_gen: None, desc: None, heard: None };
     }
     let win = min_window(m);
     let (ds, don) = d_spec(&a, &b, rate, win);
@@ -499,7 +502,7 @@ pub fn score(orig: &[f32], synth: &[f32], m: &WaveMeta) -> Score {
         flags.push("mod_off");
     }
     let score = (-(ds / W_SPEC + don / W_ONSET + de / W_ENV + dl / W_LOOP + dp / W_PER + dm / W_MOD)).exp();
-    Score { score, d_spec: ds, d_env: de, d_loop: dl, d_onset: don, d_per: dp, d_mod: dm, flags, f0_orig: fa, f0_gen: fb, desc: None }
+    Score { score, d_spec: ds, d_env: de, d_loop: dl, d_onset: don, d_per: dp, d_mod: dm, flags, f0_orig: fa, f0_gen: fb, desc: None, heard: None }
 }
 
 /// Strongest spectral peak (Hz, 100 Hz – 0.45·rate) of the first 300 ms.

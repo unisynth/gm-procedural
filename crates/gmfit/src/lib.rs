@@ -160,6 +160,12 @@ pub fn evaluate(orig: &[f32], i: usize, p: &Params) -> (score::Score, Option<sco
     let synth = gmgen::render_wave(i, p);
     let mut s = score::score(orig, &synth, &m);
     s.describe(orig, &synth, &m);
+    if !s.flags.contains(&"nan") {
+        let speed = play_speed(i).1;
+        let (a, b) = (audio::played(orig, &m, 1.0), audio::played(&synth, &m, 1.0));
+        let h = hear::hear(&hear::at_speed(&a, speed), &hear::at_speed(&b, speed), m.rate as f32);
+        s.heard = Some([h.added, h.missing, h.moddiff]);
+    }
     let plain = (!p.correction.is_empty() || !p.tf.is_empty() || !p.env.is_empty()).then(|| {
         let mut q = p.clone();
         q.correction.clear();
@@ -243,18 +249,33 @@ pub fn set_param(p: &mut Params, path: &str, v: f32) -> Result<(), String> {
 /// Character flags (design D4n) and the score cost of each when choosing between versions of a wave.
 pub const CHAR_FLAGS: [&str; 3] = ["lines", "transient_off", "peaks_off"];
 pub const CHAR_PENALTY: f32 = 0.1;
+/// Weight of the audible difference (design D4p) in the rank.
+pub const HEAR_PENALTY: f32 = 0.5;
 
-/// Rank of a scored version: score − `CHAR_PENALTY` per character flag. A version that clears a character defect
-/// wins over one that scores up to 0.1 higher but keeps it (the frame score rewards a comb that matches the loop
-/// bins over the noise wash it replaces). Needs `Score::describe` (`evaluate` does it).
+/// Audible excess of a hearing-model difference [added, missing, moddiff] over its noise floor (an independent take
+/// of the same noise): 0 for every approved pilot wave.
+pub fn hear_excess(h: [f32; 3]) -> f32 {
+    (h[0] + h[1] - hear::AUDIBLE).max(0.0) + (h[2] - hear::MOD_AUDIBLE).max(0.0)
+}
+
+/// Rank of a scored version: score − `CHAR_PENALTY` per character flag − `HEAR_PENALTY` × audible excess. A version
+/// that clears a character defect, or that a listener hears closer, wins over one the frame score prefers (it
+/// rewards a dense wash matching the average spectrum and envelope over the loud single events it loses). Needs
+/// `evaluate` (descriptors and hearing model).
 pub fn rank(s: &score::Score) -> f32 {
-    s.score - CHAR_PENALTY * s.flags.iter().filter(|f| CHAR_FLAGS.contains(f)).count() as f32
+    s.score
+        - CHAR_PENALTY * s.flags.iter().filter(|f| CHAR_FLAGS.contains(f)).count() as f32
+        - HEAR_PENALTY * s.heard.map_or(0.0, hear_excess)
 }
 
 /// Same from a score JSON object (`scores.json` row).
 pub fn rank_json(v: &Value) -> Option<f32> {
     let n = v["flags"].as_array().map_or(0, |a| a.iter().filter(|f| f.as_str().is_some_and(|f| CHAR_FLAGS.contains(&f))).count());
-    Some(v["score"].as_f64()? as f32 - CHAR_PENALTY * n as f32)
+    let h = v["hear"].as_array().filter(|a| a.len() == 3).map(|a| {
+        let g = |k: usize| a[k].as_f64().unwrap_or(0.0) as f32;
+        hear_excess([g(0), g(1), g(2)])
+    });
+    Some(v["score"].as_f64()? as f32 - CHAR_PENALTY * n as f32 - HEAR_PENALTY * h.unwrap_or(0.0))
 }
 
 /// `rank` of parameters `p` for wave `i` (renders, scores, describes).
@@ -262,7 +283,7 @@ pub fn rank_of(orig: &[f32], i: usize, p: &Params) -> f32 {
     rank(&evaluate(orig, i, p).0)
 }
 
-/// Waves whose new rank (`rank_json`: score − 0.1 per character flag) is more than 0.005 below the committed one
+/// Waves whose new rank (`rank_json`: score − flags − audible excess) is more than 0.005 below the committed one
 /// (`report --check`).
 pub fn regressions(committed: &serde_json::Map<String, Value>, new: &serde_json::Map<String, Value>) -> Vec<String> {
     let mut out: Vec<(usize, String)> = new
@@ -282,7 +303,7 @@ pub fn regressions(committed: &serde_json::Map<String, Value>, new: &serde_json:
 pub fn keep_if_better(orig: &Orig, i: usize, mut wf: WaveFile, _score: f32) -> Result<bool, String> {
     let mut scores = load_scores();
     let o = orig.wave(i);
-    let old = match scores.get(&i.to_string()).filter(|v| v.get("desc").is_some_and(|d| !d.is_null())).and_then(rank_json) {
+    let old = match scores.get(&i.to_string()).filter(|v| ["desc", "hear"].iter().all(|k| v.get(*k).is_some_and(|d| !d.is_null()))).and_then(rank_json) {
         Some(r) => r,
         None => load_wave(i).map(|w| rank_of(&o, i, &w.params)).unwrap_or(f32::MIN),
     };
