@@ -438,6 +438,12 @@ Each candidate gets its `tf`/`env` refitted before it is ranked. Result: Chinese
 0.61 → 0.70, both without flags; crash 106 and open hat 272 stay combs (noise 0.51/0.47, comb 0.60/0.58 with `lines`),
 pending listening. Tambourine/stream/bubble need many tiny transients: the `shaker` family (7.5).
 
+Listening: the −6 dB comb + noise mix sounded best on crash 106 but lost the metallic ring — lowering the whole comb
+lowers its few prominent partials too. Added candidate: keep only partials ≥ 4 / 6 dB above the median of their ±4
+neighbours at full level (with or without `spread`), drop the rest to −99 dB (the additive renderer stops at the
+first harmonic below −100 dB), noise fills the wash. Crash 106: 13 of 82 partials + noise, rank 0.560 vs comb 0.554 →
+saved (0.56, no flags). Open hat 272: 0.514 vs 0.529, stays a comb pending listening.
+
 `d_mod` fix found on the way: its trill-rate part applied when the original moved ≥ 20 cents, but a steady tone
 reads 15–25 cents of measurement wobble at a random rate — Fingered Bass 240 had dropped 0.88 → 0.30 (`mod_off`)
 in drums pass 3 unnoticed (the baseline was rewritten). Now ≥ 50 cents (whistles 93–119): 240 → 0.82, 27 waves up,

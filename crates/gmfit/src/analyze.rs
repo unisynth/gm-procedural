@@ -373,7 +373,9 @@ pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
 /// Noise loop (design D4n): a loop that is a noise wash (cymbal, brush: fine contrast ≤ `desc::WASH_DB`) but
 /// modelled by an additive comb (copy ≥ `LINES_DB` peakier, flag `lines`) gets a loop-length `noise` sustain that
 /// fills every loop bin the way the original does. A real cymbal loop sits between noise and comb (dense ringing
-/// partials), so the comb is kept at 0 / −6 / −12 / −18 dB or dropped, and the noise fills the rest: bands from
+/// partials), so the comb is kept at 0 / −6 / −12 / −18 dB, dropped, or cut to its prominent partials (≥ 4 / 6 dB over
+/// the median of ±4 neighbours; the metallic ring — a uniformly lowered comb loses it), with or without `spread`;
+/// the noise fills the rest: bands from
 /// the loop's power spectrum, then 3 passes moving each band by the original/model band energy ratio and setting
 /// the noise level so comb + noise = the loop's energy. Returns the candidates (the caller keeps the best by
 /// rank, `crate::rank`); empty when the wave does not qualify.
@@ -411,20 +413,51 @@ pub fn noise_loop(i: usize, orig: &[f32], m: &WaveMeta, p: &Params) -> Vec<Param
     };
     let total_o: f32 = po.iter().skip(1).sum();
     let mut out = Vec::new();
-    for keep in [None, Some(0.0f32), Some(-6.0), Some(-12.0), Some(-18.0)] {
+    enum Keep {
+        Drop,
+        Gain(f32),
+        Peaks(f32, bool),
+    }
+    let keeps = [
+        Keep::Drop, Keep::Gain(0.0), Keep::Gain(-6.0), Keep::Gain(-12.0), Keep::Gain(-18.0),
+        Keep::Peaks(4.0, true), Keep::Peaks(6.0, true), Keep::Peaks(4.0, false), Keep::Peaks(6.0, false),
+    ];
+    for keep in keeps {
         let mut q = p.clone();
         let a = q.layers[k].get("a");
         let dly = q.layers[k].try_get("dly").unwrap_or(0.0);
         q.layers.retain(|x| !is(x, "noise"));
         let mut kk = q.layers.iter().position(|x| is(x, "additive")).unwrap();
         match keep {
-            None => {
+            Keep::Drop => {
                 q.layers.remove(kk);
                 kk = usize::MAX;
             }
-            Some(g) => {
+            Keep::Gain(g) => {
                 let v = q.layers[kk].get("level_db");
                 q.layers[kk].set("level_db", (v + g).clamp(-80.0, 24.0));
+            }
+            Keep::Peaks(thr, keep_spread) => {
+                let h = q.layers[kk].tables[0].clone();
+                if h.len() < 9 {
+                    continue;
+                }
+                let prominent = |j: usize| {
+                    let mut nb: Vec<f32> = h[j.saturating_sub(4)..(j + 5).min(h.len())].to_vec();
+                    nb.sort_by(f32::total_cmp);
+                    h[j] - nb[nb.len() / 2] >= thr
+                };
+                // −99 dB, not lower: the additive renderer stops at the first harmonic below −100 dB.
+                let cut: Vec<f32> = (0..h.len()).map(|j| if prominent(j) { h[j] } else { -99.0 }).collect();
+                if cut.iter().all(|v| *v <= -99.0) {
+                    continue;
+                }
+                q.layers[kk].tables[0] = cut;
+                // Past the table the tail would continue the last row: keep it silent.
+                q.layers[kk].set("tail", -48.0);
+                if !keep_spread {
+                    q.layers[kk].set("spread", 0.0);
+                }
             }
         }
         if q.layers.len() >= gmgen::schema::MAX_LAYERS {
