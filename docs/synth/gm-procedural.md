@@ -169,7 +169,7 @@ at the loop start: a cymbal or belltree loop made of sparse peaks. With more hit
 (including the clicks) renders over enough loops for the tails and is folded into the loop. Both stay exactly
 periodic.
 
-Further families (`ks`, `formant`, `subtractive`, `shaker`, `fm`) arrive in task group 7.
+Further families (`ks`, `formant`, `subtractive`) arrive in task group 7.
 
 ### `shaker` (periodic; PhISEM)
 
@@ -190,6 +190,28 @@ Table `res`: `[Hz, Q, gain dB]` (≤ 3) band-pass resonances every collision rin
 Analysis (`gmfit/src/shaker.rs`, design D4o): collision onsets on a 0.5 ms envelope (rate, burst decay, level
 spread), ≤ 3 resonances by peak-picking the smoothed spectrum, one-shot envelope; candidates rate ×0.5/1/2, chirp
 0/+1, detune 0/300 cents, Q ×1/0.25, alone or added to the current model taking 30/50/70 % of the energy; kept by rank.
+
+### `fm` (all regions; sustain exactly periodic)
+
+| Parameter | Range | Default | Meaning |
+|---|---|---|---|
+| `level_db` | −80…24 | 0 | layer level |
+| `freq` | 0…20000 Hz | 0 | frequency of ratio 1 (0: the wave's fundamental) |
+| `feedback` | 0…1.5 | 0 | self-modulation of the top operator (radians) |
+| `algo` | 0…1 | 0 | 0 stack (op k modulates op k−1, op 0 sounds); 1 pairs 1→0 and 3→2 |
+| `glide`, `glide_t` | ±4800 cents, 0.0005…2 s | 0, 0.02 | start pitch offset, relaxing exponentially |
+| `cyc_hz`, `cyc_phase` | 0…400 Hz, 0…1 | 0, 0 | rate and start phase of the `cyc` pitch/loudness cycle |
+
+Table `ops`: `[ratio, amount, index decay s, index sustain]` (≤ 4, row 0 the carrier). A carrier's amount is its
+level (dB); a modulator's is its peak index (radians), decaying toward sustain × peak. Table `cyc`: `[cents, dB]`
+points evenly over one cycle, linear and wrapping (a tweet train). Sustain renders one loop and tiles it: the cycle
+rate snaps to whole cycles per loop, the base frequency to whole cycles of total phase and each ratio likewise
+(feedback: one warm-up loop); glide and index envelopes freeze at the loop start.
+
+Analysis (`gmfit/src/fm.rs`, design D4q): a chirp cycle — the loop's dominant partial tracked as an analytic signal,
+cycles per loop from the repeating level track, averaged into 32 `cyc` points on a sine, the head before the train an
+attack tone with its glide — and operator presets (DX7-style EP pairs 1:1 + 1:14, STK TubeBell 1:1.414 pairs, a
+1:3.5 pair) with indices/decays/sustains set by scored coordinate descent; kept by rank.
 
 ## Commands
 

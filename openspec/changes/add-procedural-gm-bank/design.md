@@ -520,6 +520,25 @@ the original bursts), laughing 226 misses 53 % at 7–8.4 kHz in 450–720 ms, b
 6–7.6 kHz in its first 200 ms, brush 58 and crash 106 lack the original's slow swell, 272/315 flutter more;
 cymbal 84 and tambourine 435 show nothing above the noise floor.
 
+### D4q. `fm` family and the tweet train (task 7.6)
+
+`gmgen/src/fam/fm.rs`: 2–4 sine operators (`ops` rows [ratio, amount, index decay, index sustain]; a carrier's
+amount is dB, a modulator's its peak index), stack or two pairs, feedback on the top operator, a start `glide`, and
+a repeating pitch/loudness cycle (`cyc` [cents, dB] × ≤ 32 at `cyc_hz`). Sustain renders one loop and tiles it:
+cycle rate, base frequency (total phase per loop) and ratios snap to whole cycles, so the loop is exact, feedback
+included (one warm-up loop). Tests: 1:1 and 1:3.5 sidebands at |fc ± k·fm| within 1 dB of the signed, folded Bessel
+levels (bins on the 220 Hz grid: a half-bin Hann loss of 1.4 dB first read as a 2 dB error), the cycle's plateaus at
+440/880 Hz, loop exactness with and without feedback.
+
+The bird (wave 50) is one pure partial: a steady 7.5 → 7.85 kHz tone for 66 ms, then tweets every 34 ms, each an
+8.8 → 5.2 kHz sweep in 14 ms and a quiet gap. `gmfit/src/fm.rs` tracks the loop as an analytic signal (FFT band
+around the dominant partial, loop tiled ×3), finds the cycles per loop from the repeating level track, averages the
+cycles into 32 `cyc` points on a sine carrier and makes the head an attack tone with its glide. Bird 50: 0.136
+(pass 4) → 0.505, no flags, nothing heard missing (hearing excess 0.008). Operator presets (DX7-style EP 1:1 + 1:14,
+STK TubeBell 1:1.414 pairs, a 1:3.5 pair) take indices, decays and sustains from a scored coordinate descent (the
+fitter tunes scalars only): EP2 145 0.43 (placeholder 0.011), tubular bell 464 0.21 (0.057) — above the
+placeholders, but additive analysis wins both (0.83, 0.57) and is kept by rank.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

@@ -130,6 +130,8 @@ pub(crate) fn open_for_fit(l: &mut Layer) {
         "modal" => &["level_db", "ha", "glide", "glide_t", "period", "hit_db", "click_db", "click_decay", "click_hp"],
         // `rate`, `chirp`, `fjit` stay structural: each change redraws the event pattern (a noisy objective).
         "shaker" => &["level_db", "a", "h", "d", "s", "sdecay", "gjit"],
+        // Operator tables and the cycle stay structural (analysis sets them).
+        "fm" => &["level_db", "a", "h", "d", "s", "glide", "glide_t", "feedback"],
         _ => &[],
     };
     for n in names {
@@ -1000,6 +1002,25 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
         if let Some((r, q)) = best.filter(|b| b.0 > cur) {
             p = q;
             note = format!("analyze: shaker (rank {r:.3} vs {cur:.3})");
+        }
+    }
+    // FM (task 7.6, design D4q): a tweet train (chirp cycle on a sine) and operator presets, kept by rank.
+    {
+        let cur = crate::rank_of(orig, i, &p);
+        let cands = crate::fm::candidates(i, orig, m);
+        if let Ok(dir) = std::env::var("GMFIT_FM_DUMP") {
+            for (c, q) in cands.iter().enumerate() {
+                let wf = WaveFile { wave: i as u32, params: q.clone(), placeholder: false, note: String::new() };
+                let _ = std::fs::write(format!("{dir}/fm-{i}-{c}.json"), gmgen::params_json::to_json(&wf));
+            }
+        }
+        let best = cands.into_iter().map(|q| (crate::rank_of(orig, i, &q), q)).max_by(|a, b| a.0.total_cmp(&b.0));
+        if std::env::var_os("GMFIT_TRACE").is_some() {
+            eprintln!("fm: current rank {cur:.4}, best fm {:?}", best.as_ref().map(|b| b.0));
+        }
+        if let Some((r, q)) = best.filter(|b| b.0 > cur) {
+            p = q;
+            note = format!("analyze: fm (rank {r:.3} vs {cur:.3})");
         }
     }
     WaveFile { wave: i as u32, params: p, placeholder: false, note: note.chars().take(80).collect() }

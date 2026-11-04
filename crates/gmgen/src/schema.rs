@@ -137,6 +137,17 @@ static SHAKER: [Scalar; 13] = with_env![
         s("chirp_t", 0.0005, 0.5, 0.01),
 ];
 
+static FM: [Scalar; 13] = with_env![
+        s("level_db", -80.0, 24.0, 0.0),
+        s("freq", 0.0, 20000.0, 0.0),      // base Hz of ratio 1 (0: the wave's fundamental)
+        s("feedback", 0.0, 1.5, 0.0),      // self-modulation of the top operator (radians)
+        s("algo", 0.0, 1.0, 0.0),          // 0 stack, 1 two parallel pairs
+        s("glide", -4800.0, 4800.0, 0.0),  // cents the pitch starts off, relaxing with `glide_t`
+        s("glide_t", 0.0005, 2.0, 0.02),
+        s("cyc_hz", 0.0, 400.0, 0.0),      // rate of the `cyc` pitch/loudness cycle (0: none)
+        s("cyc_phase", 0.0, 1.0, 0.0),     // cycle phase at sample 0
+];
+
 pub const FAMILIES: &[Family] = &[
     // Harmonic table `harm` (dB per harmonic 1..K), optional `phase` (cycles, harmonics 1..P).
     Family {
@@ -173,6 +184,14 @@ pub const FAMILIES: &[Family] = &[
     },
     // `res`: [Hz, Q, gain dB] resonances every collision rings (PhISEM, ≤ 3).
     Family { name: "shaker", scalars: &SHAKER, tables: &[Table { name: "res", width: 3, max_rows: 3 }], periodic: true },
+    // `ops`: [ratio, amount (carrier dB / modulator index), index decay s, index sustain] (≤ 4, row 0 the carrier).
+    // `cyc`: [cents, dB] points evenly over one cycle at `cyc_hz` (a tweet train).
+    Family {
+        name: "fm",
+        scalars: &FM,
+        tables: &[Table { name: "ops", width: 4, max_rows: 4 }, Table { name: "cyc", width: 2, max_rows: 32 }],
+        periodic: true,
+    },
 ];
 
 pub fn family(name: &str) -> Option<usize> {

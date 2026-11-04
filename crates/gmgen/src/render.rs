@@ -203,6 +203,7 @@ pub fn render(meta: &WaveMeta, p: &Params, seed: u32) -> Vec<f32> {
             "metal" => fam::metal::render(&ctx, layer, &mut buf),
             "modal" => fam::modal::render(&ctx, layer, &mut buf),
             "shaker" => fam::shaker::render(&ctx, layer, &mut buf),
+            "fm" => fam::fm::render(&ctx, layer, &mut buf),
             _ => {}
         }
         if let (Region::Attack, Some((s, _))) = (region, lp) {

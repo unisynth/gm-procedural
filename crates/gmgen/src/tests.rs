@@ -356,3 +356,124 @@ fn shaker_rate_resonances_and_loop() {
         assert!((x[i] - x[i + 2000]).abs() < 1e-5, "not periodic at {i}");
     }
 }
+
+/// Power spectrum (f64 DFT over `n` samples from `x[at..]`, Hann), bins 0..n/2.
+fn power(x: &[f32], at: usize, n: usize) -> std::vec::Vec<f64> {
+    (0..n / 2)
+        .map(|k| {
+            let (mut re, mut im) = (0.0f64, 0.0f64);
+            let w = std::f64::consts::TAU * k as f64 / n as f64;
+            for i in 0..n {
+                let h = 0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / n as f64).cos();
+                re += x[at + i] as f64 * h * (w * i as f64).cos();
+                im += x[at + i] as f64 * h * (w * i as f64).sin();
+            }
+            re * re + im * im
+        })
+        .collect()
+}
+
+/// Bessel J_k(x) by its series.
+fn bessel(k: i32, x: f64) -> f64 {
+    let sign = if k < 0 && k % 2 != 0 { -1.0 } else { 1.0 };
+    let k = k.unsigned_abs() as i32;
+    let mut s = 0.0;
+    let mut fact_m = 1.0;
+    for m in 0..30 {
+        if m > 0 {
+            fact_m *= m as f64;
+        }
+        let fact_mk: f64 = (1..=(m + k)).map(|v| v as f64).product();
+        s += (-1f64).powi(m) / (fact_m * fact_mk) * (x / 2.0).powi(2 * m + k);
+    }
+    sign * s
+}
+
+/// Spec "fm" (task 7.6): sidebands of a 1:1 and a 1:3.5 pair at fc ± k·fm with Bessel levels; the cycle curve sets
+/// the pitch; sustain loops exactly.
+#[test]
+fn fm_sidebands_cycle_and_loop() {
+    use crate::params::{Layer, Params};
+    use crate::render::WaveMeta;
+    use crate::schema::{family, Region};
+    let rate = 22050u32;
+    let meta = WaveMeta { rate, len: 22050, unity: 69, fine: 0, looped: None };
+    // 2 Hz bins: every line (a multiple of 220 Hz) sits on a bin, so the window's scalloping is the same for all.
+    let n = 11025;
+    let hz = |k: usize| k as f64 * rate as f64 / n as f64;
+    let bin = |f: f64| (f * n as f64 / rate as f64).round() as usize;
+    let level = |pw: &[f64], f: f64| (bin(f) - 2..=bin(f) + 2).map(|k| pw[k]).fold(0.0, f64::max);
+    for (ratio, index) in [(1.0f32, 1.0f32), (3.5, 1.5)] {
+        let mut l = Layer::new(family("fm").unwrap(), Region::Whole);
+        l.set("freq", 440.0);
+        l.set("d", 30.0);
+        // carrier [ratio, dB, index decay, index sustain], modulator [ratio, index, decay, sustain]
+        l.tables[0] = std::vec![1.0, 0.0, 1.0, 1.0, ratio, index, 1.0, 1.0];
+        let mut p = Params::default();
+        p.layers.push(l);
+        let x = render(&meta, &p, 1);
+        let pw = power(&x, 4000, n);
+        let (fc, fm) = (440.0f64, 440.0 * ratio as f64);
+        // Lines expected at |fc + k·fm|, k = −3..3; amplitude Σ J_k over lines that coincide (1:1 folds).
+        let mut lines: std::vec::Vec<(f64, f64)> = std::vec::Vec::new();
+        for k in -5i32..=5 {
+            let f = (fc + k as f64 * fm).abs();
+            let a = bessel(k, index as f64) * if fc + k as f64 * fm < 0.0 { -1.0 } else { 1.0 };
+            match lines.iter_mut().find(|(g, _)| (*g - f).abs() < 1.0) {
+                Some(e) => e.1 += a,
+                None => lines.push((f, a)),
+            }
+        }
+        let c = level(&pw, fc).sqrt();
+        let a0 = lines.iter().find(|(f, _)| (*f - fc).abs() < 1.0).unwrap().1.abs();
+        for &(f, a) in lines.iter().filter(|(f, a)| *f > 50.0 && a.abs() > 0.05 && *f < 10000.0) {
+            let got = 20.0 * (level(&pw, f).sqrt() / c).log10();
+            let want = 20.0 * (a.abs() / a0).log10();
+            assert!((got - want).abs() < 1.0, "1:{ratio} I={index}: line {f} Hz {got:.2} dB re carrier, theory {want:.2}");
+        }
+        // Nothing strong off the lines.
+        let top = pw.iter().cloned().fold(0.0, f64::max);
+        for (k, v) in pw.iter().enumerate().skip(5) {
+            if *v > top * 1e-3 {
+                assert!(lines.iter().any(|(f, _)| (hz(k) - f).abs() < 12.0), "1:{ratio}: stray line at {} Hz", hz(k));
+            }
+        }
+    }
+    // Cycle: plateaus [0, 0, +1200, +1200] cents at 10 Hz (linear between points) → the first quarter of each cycle at
+    // 440 Hz, the third at 880 Hz.
+    let mut l = Layer::new(family("fm").unwrap(), Region::Whole);
+    l.set("freq", 440.0);
+    l.set("d", 30.0);
+    l.set("cyc_hz", 10.0);
+    l.tables[0] = std::vec![1.0, 0.0, 1.0, 1.0];
+    l.tables[1] = std::vec![0.0, 0.0, 0.0, 0.0, 1200.0, 0.0, 1200.0, 0.0];
+    let mut p = Params::default();
+    p.layers.push(l.clone());
+    let x = render(&meta, &p, 1);
+    let per = 2205;
+    let zc = |off: usize| {
+        let c: usize = (1..9).map(|k| x[k * per + off..k * per + off + 500].windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count()).sum();
+        c as f32 / (8.0 * 500.0 / rate as f32)
+    };
+    let (lo, hi) = (zc(20), zc(1122));
+    assert!((lo - 440.0).abs() < 10.0 && (hi - 880.0).abs() < 20.0, "cycle pitch {lo} / {hi}");
+    // Sustain: exactly periodic over the loop (cycle, glide frozen, stacked modulator with an odd ratio).
+    let looped = WaveMeta { rate, len: 6000, unity: 69, fine: 0, looped: Some((1000, 1486)) };
+    l.region = Region::Sustain;
+    l.set("cyc_hz", 29.4);
+    l.set("glide", -300.0);
+    l.tables[0] = std::vec![1.0, 0.0, 1.0, 1.0, 1.37, 0.8, 0.5, 0.5];
+    l.tables[1] = std::vec![0.0, 0.0, -900.0, -6.0, -400.0, -30.0];
+    let mut p = Params::default();
+    p.layers.push(l);
+    let x = render(&looped, &p, 5);
+    assert!(x.iter().any(|v| v.abs() > 0.01), "sustain silent");
+    for i in 1000..4000 {
+        assert!((x[i] - x[i + 1486]).abs() < 1e-4, "not periodic at {i}: {} vs {}", x[i], x[i + 1486]);
+    }    // With feedback on the top operator (one warm-up loop settles it).
+    p.layers[0].set("feedback", 0.8);
+    let x = render(&looped, &p, 5);
+    for i in 1000..4000 {
+        assert!((x[i] - x[i + 1486]).abs() < 1e-4, "feedback: not periodic at {i}: {} vs {}", x[i], x[i + 1486]);
+    }
+}

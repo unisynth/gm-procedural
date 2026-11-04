@@ -46,6 +46,7 @@ pub mod audio;
 pub mod cmaes;
 pub mod desc;
 pub mod fit;
+pub mod fm;
 pub mod hear;
 pub mod modal;
 pub mod wavelet;
