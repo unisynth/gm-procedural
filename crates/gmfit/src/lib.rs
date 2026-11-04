@@ -107,6 +107,33 @@ pub fn users(i: usize) -> (Vec<String>, &'static str) {
     (names, cat)
 }
 
+/// How the bank plays wave `i`: `(key, speed, instrument)`. Speed = 2^((key − unity)/12 + fine/1200) with the
+/// region's own unity/fine (falling back to the wave's). The key: a drum kit's key for the wave (Standard kit
+/// first); else the main melodic user (bank 0 first), at the unity note when its key range holds it, otherwise
+/// the nearest key of the range. Listening pages play waves at this speed (kick 1.0, belltree 0.71).
+pub fn play_speed(i: usize) -> (u8, f32, String) {
+    let bank = gmgen::bank::skeleton();
+    let wave_ws = gmgen::bank::meta(i).map(|m| (m.unity, m.fine));
+    let mut best: Option<(u8, (u8, f32, String))> = None;
+    for ins in &bank.instruments {
+        for r in ins.regions.iter().filter(|r| r.wave as usize == i) {
+            let (unity, fine) = r.wsmp.as_ref().map(|w| (w.unity_note, w.fine_tune)).or(wave_ws).unwrap_or((60, 0));
+            let (lo, hi) = (r.key_lo.min(127), r.key_hi.min(127));
+            let (rank, key) = if ins.drums {
+                (if ins.program == 0 { 0 } else { 1 }, lo)
+            } else {
+                (if ins.bank_msb == 0 { 2 } else { 3 }, unity.clamp(lo, hi.max(lo)))
+            };
+            if best.as_ref().is_none_or(|b| rank < b.0) {
+                let speed = 2f32.powf((key as f32 - unity as f32) / 12.0 + fine as f32 / 1200.0);
+                let name = String::from_utf8_lossy(&ins.name).trim().to_string();
+                best = Some((rank, (key as u8, speed, name)));
+            }
+        }
+    }
+    best.map_or((60, 1.0, String::new()), |b| b.1)
+}
+
 pub fn wave_path(i: usize) -> PathBuf {
     assets_dir().join("waves").join(format!("{i:03}.json"))
 }

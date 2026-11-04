@@ -201,6 +201,11 @@ the kick's missing click had cost almost nothing. Tiers: A ≥ 0.85, B ≥ 0.70,
 `clipped`, `nan`, `env_off` (10 ms span > 6 dB off where the original is above −40 dB), `pitch_off` (autocorrelation
 f0 > 5 cents off, pitched waves only) and `loop_click`.
 
+Playback speed: `gmfit render` writes `play: {key, speed, by}` into `report.json`. Speed = 2^((key − unity)/12 +
+fine/1200), using the region's own unity/fine and the key the bank triggers the wave from. That key is the drum
+kit's key (Standard kit first), or for a melodic wave the unity note clamped to its main instrument's key range.
+Listening pages play at this speed with pitch following it (belltree 49 ×0.71, SFX-kit bird ×0.38; kick ×1).
+
 ## Analysis and fitting (`crates/gmfit`)
 
 **Priors** (`priors.rs`): each GM program and drum key maps to preferred families, best first. `analyze` takes the

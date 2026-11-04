@@ -62,7 +62,8 @@ render it with `-p`. `render` exits with code 2 when any flag is set (even `pitc
 1. `render`: read the sheet (waveforms, spectrograms, difference) and the terms. Large `d_onset` → attack; `d_env` →
    loudness contour; `d_loop` → loop spectrum; `d_spec` → overall.
 2. Run the pipeline. Keep the result if it is better, and restore the backup if it is not.
-3. Listen, or let the user listen: rebuild `build/gm/pilot/index.html` rows (orig/gen/sheet), serve the folder with
+3. Listen, or let the user listen (play each wave at its bank speed, `report.json` `play.speed`, with
+   `preservesPitch = false`; at speed 1 many kit and SFX waves sound too fast): rebuild `build/gm/pilot/index.html` rows (orig/gen/sheet), serve the folder with
    `serve_mockup` and open the **localhost** URL on the canvas. A `kind:file` canvas of that page failed with "live-server
    target not found".
 4. For what is heard but not scored, **measure it** (below), fix the analysis or generator, and re-run.

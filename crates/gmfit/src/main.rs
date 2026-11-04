@@ -86,7 +86,7 @@ fn main() {
             let mut rep = json!({
                 "wave": i, "category": cat, "instruments": names, "rate": m.rate, "len": m.len,
                 "loop": m.looped, "unity": m.unity, "placeholder": wf.placeholder, "numbers": wf.params.numbers(),
-                "layers": layers, "tier": gmfit::tier(&s), "dir": dir.display().to_string(),
+                "layers": layers, "tier": gmfit::tier(&s), "play": {"key": gmfit::play_speed(i).0, "speed": score::r4(gmfit::play_speed(i).1), "by": gmfit::play_speed(i).2}, "dir": dir.display().to_string(),
             });
             rep.as_object_mut().unwrap().extend(s.json().as_object().unwrap().clone());
             if let Some(p) = plain {
