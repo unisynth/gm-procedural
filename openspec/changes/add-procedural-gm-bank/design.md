@@ -584,6 +584,22 @@ water bubbling"; 196 laser "very near". The hearing model's 11.6 ms frames misse
 Bulk: 476 0.39 → 0.44 (rattle; roughness −3.4 → −0.4 dB), guiro 228 0.35 → 0.40, 202 −0.08 → 0.22, 445 −0.02 → 0.31,
 226 0.14 → 0.17; no regressions.
 
+Ring layers (404 "ringing has several layers"). Onset counting fails on water: a 6 dB rise in 2 ms is everyday in
+band-limited noise (a kick's decay "had" 25–113 events/s per band), and noise "rings" ∝ 1/bandwidth, faking a
+constant-Q pattern. Measure instead per third-octave band the 1/e width w of the analytic envelope power's circular
+autocorrelation: ring index = w × bandwidth (Gaussian noise 0.47–0.58 in every band; ringing events ≈ τ/2 beyond).
+404: hiss (0.5) below 1.6 kHz, droplets ringing above — 2–2.5 kHz τ ≈ 4 ms, 3–10 kHz τ ≈ 1.5 ms, Q ≈ 30–40; the bank
+copy rings evenly (0.7), q10/q20 and a frame-fitted ring model ring 2–6× too long up high.
+- Analysis: `shaker::ring_layers` groups ringing bands (≥ 0.75, within 20 dB) into 1–2 contiguous groups by ln τ, one
+  shaker layer each (resonance at the group centre, `fjit` spanning it, Q = π f τ, rate ×1/2/4), levelled per group;
+  `ring_combos` puts them over the current model's hiss bed (shaker layers replaced; 50/80 % energy).
+- Hearing: `ring_diff` = power-weighted |log2(copy/original index)| over bands within 30 dB, on the loops at the
+  stored rate, unpitched originals only (a tone's envelope never decorrelates: approved piano 293 read 1.5). Audible
+  above 0.3 octave (cymbals 0.1–0.3); excess 0.5 × beyond. A fit without it flattened the rings.
+- Bulk over the 15 waves beyond 0.3 + bubble: 437 −0.84 → 0.39, 63 −0.86 → 0.34, 283 −1.37 → 0.09, 489 −0.09 → 0.46,
+  195 0.05 → 0.26, 408 0.28 → 0.41, 109, 62 0.26 → 0.30, 490, 438. 404's droplets + hiss (score 0.44, missing 0.09 →
+  0.01, ring −0.45 → +0.33 oct) ranks 0.41 < 0.44: left to listening (`build/gm/ab3`).
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

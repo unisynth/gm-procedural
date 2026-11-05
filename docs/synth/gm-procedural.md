@@ -190,6 +190,9 @@ Table `res`: `[Hz, Q, gain dB]` (≤ 3) band-pass resonances every collision rin
 Analysis (`gmfit/src/shaker.rs`, design D4o): collision onsets on a 0.5 ms envelope (rate, burst decay, level
 spread), ≤ 3 resonances by peak-picking the smoothed spectrum, one-shot envelope; candidates rate ×0.5/1/2, chirp
 0/+1, detune 0/300 cents, Q ×1/0.25, alone or added to the current model taking 30/50/70 % of the energy; kept by rank.
+Ring layers (design D4s): per third-octave band the ring index (envelope-power autocorrelation width × bandwidth;
+noise 0.5, ringing ≥ 0.75) and ring τ; ringing bands grouped by τ into 1–2 shaker layers (Q = π f τ) over the
+current model's hiss bed. The hearing model's `ring` (octaves, unpitched loops) reports "rings too briefly / too long".
 
 ### `fm` (all regions; sustain exactly periodic)
 
@@ -246,7 +249,102 @@ GM_DLS=… cargo test -p gmgen --features std                                # +
 GM_DLS=… cargo run --release -p gmfit -- render 289                       # build/gm/289/{orig,gen}.wav, sheet.png, report.json
 GM_DLS=… cargo run --release -p gmfit -- sweep 289 0.d 0.1,0.3,1          # scored variants + sweep.png
 GM_DLS=… cargo run --release -p gmfit -- report --check                   # build/gm/report.md + bank.png; regression gate
+cargo run --release -p gmfit -- bank                                       # build/gm/gen.dls (the generated bank as a file)
+GM_DLS=… cargo run --release -p gmfit -- bank --orig -o build/gm/orig.dls  # the original through the same DLS writer
 ```
+
+## The gmplus set (`--set plus`, change `add-gmplus-bank`)
+
+A second parameter set, `assets/gm-plus/`, is fitted to the gmplus soundfont (Sound Canvas samples, 32 kHz) instead
+of Windows `gm.dls`. It keeps the gm.dls skeleton: the same instruments, regions, articulation and wave indices, so
+every song plays unchanged. Each wave moves to 32 kHz, and its length and loop come from the gmplus target.
+
+- **Inputs.** The soundfont comes from `GMPLUS_SF2`, a local `gmplus.sf2` that is never committed (Release 1, see
+  `research/gm-procedural-instruments.md` §4). `GM_DLS` is still needed, for level matching and the one fallback.
+- **Targets** (`crates/gmfit/src/plus.rs`, design D2):
+  - The zone is the one gmplus plays at the wave's key (`main_user`: the region `play_speed` picks), at velocity 100.
+  - The sample is DC-blocked at 10 Hz and resampled to 32 kHz (`dsp.rs`, Kaiser sinc) so the gm.dls region playing
+    it at that key sounds as gmplus does. gmplus's own tuning is kept, including its stretched piano.
+  - The mod envelope bends pitch (`modEnvToPitch`) and sweeps the zone low-pass (`modEnvToFilterFc`) through the
+    attack, up to 1 s, then freezes for the loop.
+  - The loop is a whole number of source loops with an integer length. The leftover pitch error goes into the fine
+    tune.
+  - The target is level-matched to the gm.dls wave (A-weighted RMS of 0.5 s played). Peaks above 0.85 move into the
+    wsmp gain.
+- **Map.** `gmfit plus-map` writes `assets/gm-plus/map.json` (`gm-plus-map/1`, one row per wave, no audio): preset,
+  key, zone, sample, step, loop, `fine_delta`, `wsmp_gain_db`, filter, pitch envelope, freeze time, and `fallback`
+  for a wave with no gmplus zone. Only wave 366, Gt. Feedback (bank 8, program 31), falls back.
+- **Render.** With `--set plus`, `render` draws three rows in `sheet.png` (target, generated, the gm.dls wave resampled
+  to 32 kHz), and `report.json` carries the wave's map row as `gmplus`.
+- **Set selection.** `--set plus` on any command uses `assets/gm-plus/` and `build/gm-plus/`, and fits the gmplus
+  targets. Without `--set` every command behaves as before; `render 293` is byte-identical.
+
+- **Generation cost** (task 2.3, measured with `cargo run --release -p gmgen --features plus --example bench_sets`,
+  native, one thread, before any optimisation):
+
+  | Set | Samples | Full build |
+  |---|---|---|
+  | gm (committed fits) | 1.54 M | 6.8 s |
+  | plus skeleton with the gm parameters | 10.82 M (7.0×) | ≈ 54 s |
+
+  The 7× comes from 32 kHz, gmplus's longer native samples, and up to 1 s of baked envelope motion. Without baking it
+  would be 2.6×; with a 0.25 s limit, 3.5×. Fidelity was chosen over load time (1 s kept). Generation speed is the
+  open budget item of `add-procedural-gm-bank` 9.4 (≤ 300 ms native, ≤ 1 s wasm for the gm set). `tests_plus.rs`
+  `plus_sample_budget` fails above 11.5 M samples.
+
+```bash
+export GM_DLS=~/Downloads/64k-tools/gmdls/gm.dls GMPLUS_SF2=~/Downloads/64k-tools/gmplus/gmplus.sf2
+cargo run --release -p gmfit -- plus-map                 # assets/gm-plus/map.json (~7 s, 12 threads)
+cargo run --release -p gmfit -- --set plus render 293     # build/gm-plus/293/
+cargo test --release -p gmfit --test plus                 # piano targets vs a naive gmplus render (< 1 cent)
+```
+
+## Full-song A/B (`tools/gm-songs`)
+
+Single-wave scores do not show how the bank sounds in music, so whole General MIDI songs are rendered through
+both banks and compared. The songs are curated sets, kept in `build/gm/midi/` and never committed:
+
+- `novak/`: the 46 DOS-game tracks of John Novak's *Grand MS-DOS gaming General MIDI showdown* (archive.org
+  `DOS-Gaming-General-MIDI-Comparison`, `midi-files.zip`; `test-tone` skipped).
+- `gus/`: *The Very Best of GUS MIDI* (archive.org `BESTMID6`, all seven zips), ~720 files hand-picked in 1994 as
+  files that sound good on any GM card. `select` takes 24 of them greedily by coverage: a new melodic program
+  counts 1 and a new drum key 0.25 (45 s to 8 min, at least 3 channels).
+
+The renderer is Apple's AUMIDISynth (`render.swift`, offline, float WAV) for both banks. AUMIDISynth refuses the
+Windows file itself (`-10871`), so the original is re-written by `gmfit bank --orig`. Both files then have the same
+layout and articulation, and only the waves differ. AUMIDISynth also identifies waves by their `INFO`/`INAM` name.
+The `dls::write` output has no wave names, so every region would play the first sample loaded (Piano 1, wave 289).
+`prepare` therefore names the waves in render copies (`dlsname.ts`, `build/gm/songs/banks/`). It then checks that
+zeroing wave 150 silences an Organ 1 note. Every sounding channel is also rendered solo, with the other
+channels' notes removed and their controllers kept.
+
+The metrics are ΔLUFS (generated − original) and `tf`. `tf` is the mean |Δ dB| of third-octave band levels per
+46 ms frame after the overall gain is removed. It measures timbre over time; 0 means identical. Octave LTAS
+differences are also listed. Stems more than 20 dB below the mix are left out of the instrument ranking.
+
+**Four-way (change add-gmplus-bank).** Every song and stem is rendered through four banks: gm.dls, gmplus.sf2
+(AUMIDISynth plays SF2 directly), gen-gm (`build/gm/gen.dls`) and gen-plus (`build/gm-plus/gen.dls`). Metrics:
+gen-gm↔gm.dls (top-level fields, as before), gen-plus↔gmplus (`plus`), gmplus↔gm.dls (`sf`). The page shows a
+"plus fitted" column, the share of a stem's notes on gen-plus waves that hold a fit (not a placeholder), computed at
+page time from `assets/gm-plus/waves/`. Until the bulk fit, the gen-plus column is meaningful only where that is high.
+`waves.html` holds all 495 sounds with the same four versions: gm.dls wave and gen-gm (from `gmfit dump`), the gmplus
+target and gen-plus (from `gmfit --set plus dump`), each played as stored with the loop repeated to 2 s, with
+gmfit scores, the gmplus sample name, and filters for category and fitted waves. One player per page; keys 1–4
+switch bank at the same position.
+
+```bash
+swiftc -O tools/gm-songs/render.swift -o build/gm/songs/gmrender
+gmfit bank --orig -o build/gm/orig.dls && gmfit bank && gmfit --set plus bank -o build/gm-plus/gen.dls
+bun tools/gm-songs/run.ts select            # build/gm/songs/selection.json
+GMPLUS_SF2=… bun tools/gm-songs/run.ts prepare   # named render copies of the 3 DLS + gmplus.sf2, renderer self-check per bank
+bun tools/gm-songs/run.ts render [--shard i/n]  # mixes + solo channels × 4 banks → results*.json, mp3 (stems: 30 s excerpts)
+gmfit dump build/gm/songs/waves/gm && gmfit --set plus dump build/gm/songs/waves/plus
+bun tools/gm-songs/run.ts waves             # build/gm/songs/waves/NNN-{orig,sf,gen,plus}.mp3
+bun tools/gm-songs/run.ts page              # build/gm/songs/index.html (songs) + waves.html (sounds) + report.md
+```
+
+Cost: about 6 min per song per process (renders take ~1 s per bank; metrics and mp3 dominate), so the 70 songs
+take about an hour on 8 shards. The sounds step takes under 30 s.
 
 ## Score (`crates/gmfit/src/score.rs`, design D6)
 
