@@ -559,6 +559,31 @@ Two fit bugs surfaced once the hearing penalty made objectives negative: `score_
 `par_scores` 0 for invalid parameters, so a broken candidate beat every real one ("after 0.0" in bulk logs, a
 near-silent laugh). Both now return −1.
 
+### D4s. Listening round: roughness, the vibraslap rattle, runner-up fitting, droplets
+
+Listening (bank speed): 476 vibraslap "not woody, like a motor"; 404 water "not watery"; 226 "laugh, almost"; 62 "some
+water bubbling"; 196 laser "very near". The hearing model's 11.6 ms frames missed both complaints.
+
+- Roughness (`hear::roughness`): 2 ms envelope deviation from its 50 ms mean in 4 bands, energy-weighted; copy −
+  original enters `hear_excess` as 0.1 × (|Δ| − 1 dB). Pilots ≤ 0.12 dB; 476 −3.4 dB (strikes merged into a buzz).
+  Test: a 13 ms strike train against its smeared wash.
+- Vibraslap = 8–9 strikes per 109 ms loop, 13.5 ms apart, levels within 6 dB, gone within ~8 ms, broadband, over
+  1.25/3.4 kHz rings. `modal::rattle`: measured strikes (`strikes`: 0.5 ms peaks, ±4 ms maxima) as the hit table,
+  the 3 strongest partials (none within 5 %) ringing with the strikes' decay, a broadband click — grid over click
+  level/band and mode attack, levelled in 3 passes (the click does not follow `level_db`). Rings longer than the
+  strike spacing merge into a steady tone.
+- Runner-up fitting: `analyze_alts` keeps each family block's best that lost by < 0.1; `fit::pipeline` fits and
+  corrects it too and keeps the better (a rattle only wins once corrected: 476 runner-up 0.442 vs main 0.345).
+- Droplets (water): shaker candidates with Q × 4, detune ±900–1200 cents, +½ octave sweep. Level-matched they lose
+  on rank (0.34–0.37 vs 0.47) though Q × 10 matches the original's short-frame tonality (committed −2.4 dB) — left to
+  listening (`build/gm/ab2`).
+- `par_scores` runs on a persistent worker pool and every FFT plan comes from a per-thread cached planner
+  (`plan.rs`). RSS grew with fit length (2.3 GB at 320 iterations) while the live heap stayed 58 MB: freed pages
+  counted until reused, not a leak; the pool and cache cut the churn (user time −17 %).
+
+Bulk: 476 0.39 → 0.44 (rattle; roughness −3.4 → −0.4 dB), guiro 228 0.35 → 0.40, 202 −0.08 → 0.22, 445 −0.02 → 0.31,
+226 0.14 → 0.17; no regressions.
+
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
 transcendental functions and has no `mul_add` (Rust does not fuse on its own, and wasm32 has no FMA). Oscillators

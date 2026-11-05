@@ -7,7 +7,6 @@
 //! - peaks per frame: modes smeared into many peaks (or the reverse).
 
 use rustfft::num_complex::Complex32;
-use rustfft::FftPlanner;
 
 /// Octave bands (Hz) compared by `contrast`.
 /// Weighted fine contrast up to which a sound counts as a noise wash (cymbal, brush, open hat loop ≈ 7–19 dB;
@@ -20,7 +19,7 @@ fn power_frames(x: &[f32], n: usize, hop: usize, centred: bool) -> Vec<Vec<f32>>
     let pad = if centred { n / 2 } else { 0 };
     let total = (x.len() + 2 * pad).max(n);
     let get = |i: usize| if i >= pad && i - pad < x.len() { x[i - pad] } else { 0.0 };
-    let fft = FftPlanner::<f32>::new().plan_fft_forward(n);
+    let fft = crate::plan::forward(n);
     let win: Vec<f32> = (0..n).map(|k| 0.5 - 0.5 * (std::f32::consts::TAU * k as f32 / n as f32).cos()).collect();
     let mut out = Vec::new();
     let mut s = 0;

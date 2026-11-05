@@ -12,7 +12,6 @@ use gmgen::params::{Layer, Params};
 use gmgen::render::WaveMeta;
 use gmgen::schema::{family, Region};
 use rustfft::num_complex::Complex32;
-use rustfft::FftPlanner;
 
 /// Points in a `cyc` table.
 const POINTS: usize = 32;
@@ -20,14 +19,13 @@ const POINTS: usize = 32;
 /// Analytic signal of circular `x` restricted to `lo..hi` Hz.
 fn analytic(x: &[f32], rate: f32, lo: f32, hi: f32) -> Vec<Complex32> {
     let n = x.len();
-    let mut planner = FftPlanner::<f32>::new();
     let mut b: Vec<Complex32> = x.iter().map(|v| Complex32::new(*v, 0.0)).collect();
-    planner.plan_fft_forward(n).process(&mut b);
+    crate::plan::forward(n).process(&mut b);
     for (k, c) in b.iter_mut().enumerate() {
         let f = k as f32 * rate / n as f32;
         *c = if k <= n / 2 && f >= lo && f < hi { *c * 2.0 / n as f32 } else { Complex32::new(0.0, 0.0) };
     }
-    planner.plan_fft_inverse(n).process(&mut b);
+    crate::plan::inverse(n).process(&mut b);
     b
 }
 
@@ -53,7 +51,7 @@ fn tracks(z: &[Complex32], rate: f32, w: usize) -> (Vec<f32>, Vec<f32>) {
 fn dominant(x: &[f32], rate: f32) -> (f32, f32) {
     let n = x.len();
     let mut b: Vec<Complex32> = x.iter().map(|v| Complex32::new(*v, 0.0)).collect();
-    FftPlanner::<f32>::new().plan_fft_forward(n).process(&mut b);
+    crate::plan::forward(n).process(&mut b);
     let p: Vec<f32> = b[..n / 2].iter().map(|c| c.norm_sqr()).collect();
     // Peak of the power smoothed over ±200 Hz (a sweep spreads it).
     let w = ((200.0 * n as f32 / rate) as usize).max(1);

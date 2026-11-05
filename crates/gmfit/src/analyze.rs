@@ -15,7 +15,6 @@ use gmgen::params_json::WaveFile;
 use gmgen::render::WaveMeta;
 use gmgen::schema::{family, Region, FAMILIES, MAX_NUMBERS};
 use rustfft::num_complex::Complex32;
-use rustfft::FftPlanner;
 
 /// Prior of the first instrument that uses wave `i` (standard kit preferred for drum waves).
 pub fn prior_for_wave(i: usize) -> Prior {
@@ -39,7 +38,7 @@ pub fn prior_for_wave(i: usize) -> Prior {
 /// Loop DFT: magnitudes (amplitude units) and phases (radians, cosine reference) for bins 0..=L/2.
 fn dft(x: &[f32]) -> (Vec<f32>, Vec<f32>) {
     let l = x.len();
-    let fft = FftPlanner::<f32>::new().plan_fft_forward(l);
+    let fft = crate::plan::forward(l);
     let mut buf: Vec<Complex32> = x.iter().map(|v| Complex32::new(*v, 0.0)).collect();
     fft.process(&mut buf);
     (buf[..=l / 2].iter().map(|c| 2.0 * c.norm() / l as f32).collect(), buf[..=l / 2].iter().map(|c| c.arg()).collect())
@@ -48,7 +47,7 @@ fn dft(x: &[f32]) -> (Vec<f32>, Vec<f32>) {
 /// Mean power spectrum (Hann, 2048) of `x`, bins 0..=1024.
 pub(crate) fn avg_power(x: &[f32]) -> Vec<f32> {
     let n = 2048;
-    let fft = FftPlanner::<f32>::new().plan_fft_forward(n);
+    let fft = crate::plan::forward(n);
     let win: Vec<f32> = (0..n).map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / n as f32).cos()).collect();
     let mut acc = vec![0.0f32; n / 2 + 1];
     let mut frames = 0;
@@ -248,16 +247,15 @@ pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
     // frames of the best normalised autocorrelation at one period ±4 % (vibrato). 1 = pitched, ~0 = noise.
     let periodicity = |x: &[f32], (a, b): (f32, f32)| -> f32 {
         let lp: Vec<f32> = x[s..s + l].to_vec();
-        let mut fft = FftPlanner::<f32>::new();
         let mut buf: Vec<Complex32> = lp.iter().map(|v| Complex32::new(*v, 0.0)).collect();
-        fft.plan_fft_forward(l).process(&mut buf);
+        crate::plan::forward(l).process(&mut buf);
         for (j, c) in buf.iter_mut().enumerate() {
             let f = j.min(l - j) as f32 * rate / l as f32;
             if f < a || f >= b {
                 *c = Complex32::new(0.0, 0.0);
             }
         }
-        fft.plan_fft_inverse(l).process(&mut buf);
+        crate::plan::inverse(l).process(&mut buf);
         let y: Vec<f32> = buf.iter().map(|c| c.re).collect();
         let p0 = l as f32 / per as f32;
         let (lag0, lag1) = ((p0 * 0.96) as usize, (p0 * 1.04).ceil() as usize);
@@ -589,6 +587,12 @@ pub fn pick_phase_seed(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) {
 
 /// Initial parameters for wave `i`.
 pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
+    analyze_alts(i, orig, m, &mut Vec::new())
+}
+
+/// `analyze`, also collecting runner-up candidates: a family block's best that lost by less than 0.1 (its block's
+/// measure) — e.g. a vibraslap strike train that only wins once fitted and corrected (`fit::pipeline` fits it too).
+pub fn analyze_alts(i: usize, orig: &[f32], m: &WaveMeta, alts: &mut Vec<(f32, Params)>) -> WaveFile {
     let prior = prior_for_wave(i);
     let fam = priors::family(&prior);
     let rate = m.rate as f32;
@@ -946,9 +950,13 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
         if std::env::var_os("GMFIT_TRACE").is_some() {
             eprintln!("modal: tonal {tonal:.2}, prior model {base:.4}, best modal {:?}", best.as_ref().map(|b| b.0));
         }
-        if let Some((sc, q)) = best.filter(|b| b.0 > base) {
-            p = q;
-            note = format!("analyze: modal (tonal {tonal:.2}, {sc:.3} vs prior {base:.3})");
+        match best {
+            Some((sc, q)) if sc > base => {
+                p = q;
+                note = format!("analyze: modal (tonal {tonal:.2}, {sc:.3} vs prior {base:.3})");
+            }
+            Some((sc, q)) if sc > base - 0.1 => alts.push((sc, q)),
+            _ => {}
         }
     }
     // Shaker (design D4o): PhISEM candidates for sounds made of many tiny collisions, kept by rank (a smooth model
@@ -1000,9 +1008,13 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
             let wf = WaveFile { wave: i as u32, params: q.clone(), placeholder: false, note: String::new() };
             let _ = std::fs::write(path, gmgen::params_json::to_json(&wf));
         }
-        if let Some((r, q)) = best.filter(|b| b.0 > cur) {
-            p = q;
-            note = format!("analyze: shaker (rank {r:.3} vs {cur:.3})");
+        match best {
+            Some((r, q)) if r > cur => {
+                p = q;
+                note = format!("analyze: shaker (rank {r:.3} vs {cur:.3})");
+            }
+            Some((r, q)) if r > cur - 0.1 => alts.push((r, q)),
+            _ => {}
         }
     }
     // FM (task 7.6, design D4q): a tweet train (chirp cycle on a sine) and operator presets; formant (7.3, D4r);
@@ -1022,9 +1034,13 @@ pub fn analyze(i: usize, orig: &[f32], m: &WaveMeta) -> WaveFile {
         if std::env::var_os("GMFIT_TRACE").is_some() {
             eprintln!("fm: current rank {cur:.4}, best fm {:?}", best.as_ref().map(|b| b.0));
         }
-        if let Some((r, q)) = best.filter(|b| b.0 > cur) {
-            p = q;
-            note = format!("analyze: fm (rank {r:.3} vs {cur:.3})");
+        match best {
+            Some((r, q)) if r > cur => {
+                p = q;
+                note = format!("analyze: fm (rank {r:.3} vs {cur:.3})");
+            }
+            Some((r, q)) if r > cur - 0.1 => alts.push((r, q)),
+            _ => {}
         }
     }
     WaveFile { wave: i as u32, params: p, placeholder: false, note: note.chars().take(80).collect() }
@@ -1038,14 +1054,14 @@ fn loop_vibrato(lp: &[f32], rate: f32, est: f32) -> Option<(f32, usize, f32, f32
     let l = lp.len();
     let n3 = 3 * l;
     let mut buf: Vec<Complex32> = (0..n3).map(|i| Complex32::new(lp[i % l], 0.0)).collect();
-    FftPlanner::<f32>::new().plan_fft_forward(n3).process(&mut buf);
+    crate::plan::forward(n3).process(&mut buf);
     for (k, c) in buf.iter_mut().enumerate() {
         let f = k.min(n3 - k) as f32 * rate / n3 as f32;
         if f < 0.7 * est || f > 1.3 * est {
             *c = Complex32::new(0.0, 0.0);
         }
     }
-    FftPlanner::<f32>::new().plan_fft_inverse(n3).process(&mut buf);
+    crate::plan::inverse(n3).process(&mut buf);
     let y: Vec<f32> = buf.iter().map(|c| c.re).collect();
     let mut cross = Vec::new();
     for i in l..2 * l + 1 {
@@ -1092,8 +1108,8 @@ struct LoopMod {
 fn loop_modulation(lp: &[f32], rate: f32, centres: &[usize], w: usize, n: usize, rows: usize) -> LoopMod {
     let l = lp.len();
     let mut spec: Vec<Complex32> = lp.iter().map(|v| Complex32::new(*v, 0.0)).collect();
-    FftPlanner::<f32>::new().plan_fft_forward(l).process(&mut spec);
-    let inv = FftPlanner::<f32>::new().plan_fft_inverse(l);
+    crate::plan::forward(l).process(&mut spec);
+    let inv = crate::plan::inverse(l);
     let tau = std::f32::consts::TAU;
     let project = |e: &[f32], m: usize| -> (f32, f32) {
         let (mut a, mut b) = (0.0f32, 0.0f32);
@@ -1180,7 +1196,7 @@ fn loop_am(lp: &[f32], rate: f32, n: usize) -> (f32, f32) {
 fn string_attack(x: &[f32], rate: f32, s: usize, f0: f32) -> Option<Layer> {
     let n = [4096usize, 2048, 1024].into_iter().find(|n| 2 * n <= s)?;
     let zp = 8 * n;
-    let fft = FftPlanner::<f32>::new().plan_fft_forward(zp);
+    let fft = crate::plan::forward(zp);
     let spec = |at: usize| -> Vec<f32> {
         let mut b: Vec<Complex32> = (0..zp)
             .map(|k| {

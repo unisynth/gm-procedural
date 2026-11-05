@@ -6,7 +6,6 @@ use crate::cmaes::minimize;
 use gmgen::params::Params;
 use gmgen::schema::{Region, FAMILIES, MAX_CORRECTION, MAX_NUMBERS, WAVE};
 use rustfft::num_complex::Complex32;
-use rustfft::FftPlanner;
 
 /// One free parameter: wave scalar (`layer = None`) or layer scalar.
 #[derive(Clone, Copy, Debug)]
@@ -103,18 +102,59 @@ pub fn score_of(orig: &[f32], i: usize, p: &Params) -> f32 {
     let speed = crate::play_speed(i).1;
     let (a, b) = (crate::audio::played(orig, &m, 1.0), crate::audio::played(&synth, &m, 1.0));
     let h = crate::hear::hear(&crate::hear::at_speed(&a, speed), &crate::hear::at_speed(&b, speed), m.rate as f32);
-    s.score - crate::HEAR_PENALTY * crate::hear_excess([h.added, h.missing, h.moddiff])
+    s.score - crate::HEAR_PENALTY * crate::hear_excess([h.added, h.missing, h.moddiff, h.rough])
+}
+
+type Job = Box<dyn FnOnce() + Send>;
+
+/// Persistent workers for `par_scores` (one per core, `GMFIT_THREADS` overrides). Spawning fresh threads every CMA-ES
+/// generation left each thread's allocator arena behind on macOS: 16 threads × 160 iterations peaked at 825 MB
+/// against 94 MB on one thread, and a bulk run of one wave reached 5.4 GB.
+fn pool() -> &'static (std::sync::Mutex<std::sync::mpsc::Sender<Job>>, usize) {
+    static POOL: std::sync::OnceLock<(std::sync::Mutex<std::sync::mpsc::Sender<Job>>, usize)> = std::sync::OnceLock::new();
+    POOL.get_or_init(|| {
+        let n = std::env::var("GMFIT_THREADS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()))
+            .max(1);
+        let (tx, rx) = std::sync::mpsc::channel::<Job>();
+        let rx = std::sync::Arc::new(std::sync::Mutex::new(rx));
+        for _ in 0..n {
+            let rx = rx.clone();
+            std::thread::spawn(move || loop {
+                let job = match rx.lock().unwrap().recv() {
+                    Ok(j) => j,
+                    Err(_) => break,
+                };
+                job();
+            });
+        }
+        (std::sync::Mutex::new(tx), n)
+    })
 }
 
 fn par_scores(orig: &[f32], i: usize, ps: &[Params]) -> Vec<f32> {
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
-    std::thread::scope(|sc| {
-        let hs: Vec<_> = ps
-            .chunks(ps.len().div_ceil(threads).max(1))
-            .map(|c| sc.spawn(move || c.iter().map(|p| if p.validate().is_ok() { score_of(orig, i, p) } else { -1.0 }).collect::<Vec<_>>()))
-            .collect();
-        hs.into_iter().flat_map(|h| h.join().unwrap()).collect()
-    })
+    let (tx, n) = pool();
+    let orig = std::sync::Arc::new(orig.to_vec());
+    let chunks: Vec<Vec<Params>> = ps.chunks(ps.len().div_ceil(*n).max(1)).map(|c| c.to_vec()).collect();
+    let (rtx, rrx) = std::sync::mpsc::channel::<(usize, Vec<f32>)>();
+    for (k, c) in chunks.iter().cloned().enumerate() {
+        let (orig, rtx) = (orig.clone(), rtx.clone());
+        let job: Job = Box::new(move || {
+            // A panicking score must not hang the caller: report it as broken (−1).
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                c.iter().map(|p| if p.validate().is_ok() { score_of(&orig, i, p) } else { -1.0 }).collect::<Vec<_>>()
+            }))
+            .unwrap_or_else(|_| vec![-1.0; c.len()]);
+            let _ = rtx.send((k, r));
+        });
+        tx.lock().unwrap().send(job).expect("score pool");
+    }
+    drop(rtx);
+    let mut parts: Vec<(usize, Vec<f32>)> = rrx.iter().collect();
+    parts.sort_by_key(|p| p.0);
+    parts.into_iter().flat_map(|p| p.1).collect()
 }
 
 /// CMA-ES over the free scalars, then harmonic refinement. Returns the best parameters and their score.
@@ -147,7 +187,7 @@ pub fn fit(orig: &[f32], i: usize, start: &Params, iters: usize, seed: u64, only
 /// Mean power spectrum (Hann 2048, half overlap) of `x`.
 fn avg_power(x: &[f32]) -> Vec<f32> {
     let n = 2048;
-    let fft = FftPlanner::<f32>::new().plan_fft_forward(n);
+    let fft = crate::plan::forward(n);
     let mut acc = vec![0.0f32; n / 2 + 1];
     let mut start = 0;
     let mut frames = 0;
@@ -207,7 +247,7 @@ pub fn refine_bands(orig: &[f32], i: usize, start: &Params, start_score: f32) ->
 /// Loop DFT magnitudes (bins 0..=L/2).
 fn loop_mag(x: &[f32]) -> Vec<f32> {
     let l = x.len();
-    let fft = FftPlanner::<f32>::new().plan_fft_forward(l);
+    let fft = crate::plan::forward(l);
     let mut buf: Vec<Complex32> = x.iter().map(|v| Complex32::new(*v, 0.0)).collect();
     fft.process(&mut buf);
     buf[..=l / 2].iter().map(|c| c.norm()).collect()
@@ -480,7 +520,24 @@ pub fn refine(orig: &[f32], i: usize, start: &Params, rounds: usize, iters: usiz
 /// Returns the best seen with its score.
 pub fn pipeline(orig: &[f32], i: usize, iters: usize, rounds: usize, seed: u64) -> (Params, f32) {
     let m = gmgen::bank::meta(i).expect("wave meta");
-    let p = crate::analyze::analyze(i, orig, &m).params;
+    let mut alts = Vec::new();
+    let p = crate::analyze::analyze_alts(i, orig, &m, &mut alts).params;
+    let main = pipeline_from(orig, i, p, iters, rounds, seed);
+    // The closest runner-up (a model that may only win once fitted and corrected) gets the same treatment.
+    match alts.into_iter().max_by(|a, b| a.0.total_cmp(&b.0)) {
+        Some((_, q)) => {
+            let alt = pipeline_from(orig, i, q, iters, rounds, seed);
+            if std::env::var_os("GMFIT_TRACE").is_some() {
+                eprintln!("pipeline {i}: main {:.4}, runner-up {:.4}", main.1, alt.1);
+            }
+            if alt.1 > main.1 { alt } else { main }
+        }
+        None => main,
+    }
+}
+
+/// analyze → fit → correct_all → refine from the analysed `p`; the best seen with its objective.
+fn pipeline_from(orig: &[f32], i: usize, p: Params, iters: usize, rounds: usize, seed: u64) -> (Params, f32) {
     let mut best = (p.clone(), score_of(orig, i, &p));
     let (p, s) = fit(orig, i, &best.0, iters, seed, None);
     if s > best.1 {

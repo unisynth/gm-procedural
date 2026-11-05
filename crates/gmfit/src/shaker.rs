@@ -134,16 +134,23 @@ pub fn candidates(i: usize, orig: &[f32], m: &WaveMeta) -> Vec<Params> {
         base.set("d", (k1 as f32 * frame as f32 / rate).max(0.002));
     }
     let mut out = Vec::new();
+    // Droplets (water): each collision a narrow ringing tone (Q × 4) at a widely scattered pitch (±900–1200 cents),
+    // sweeping up half an octave — a stream heard as clicks without them ("not watery").
+    let drops = [0.5f32, 1.0, 2.0].into_iter().flat_map(|m| [900.0f32, 1200.0].map(|f| (m, 0.5f32, f, 4.0f32)));
     for (mul, chirp, fj, qm) in [0.5f32, 1.0, 2.0]
         .into_iter()
         .flat_map(|m| [0.0f32, 1.0].into_iter().flat_map(move |c| [0.0f32, 300.0].into_iter().flat_map(move |f| [1.0f32, 0.25].map(|q| (m, c, f, q)))))
+        .chain(drops)
     {
         {
             {
                 let mut l = base.clone();
                 // Q × 0.25: jingles click broadband (high percussive share) rather than ring as tones.
                 for r in l.tables[0].chunks_mut(3) {
-                    r[1] = (r[1] * qm).max(0.7);
+                    r[1] = (r[1] * qm).clamp(0.7, 60.0);
+                }
+                if qm > 1.0 {
+                    l.set("chirp_t", (2.0 * sd).clamp(0.0005, 0.5));
                 }
                 l.set("rate", (r_est * mul).clamp(1.0, 4000.0));
                 l.set("chirp", chirp);

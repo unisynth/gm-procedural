@@ -5,7 +5,6 @@
 //!   reads as FM; fixed modes at its sidebands would beat as AM.
 //! - [`band_onsets`]: strikes detected inside the resonance band (a rattle's hits blur in the broadband envelope).
 use rustfft::num_complex::Complex32;
-use rustfft::FftPlanner;
 
 /// Analytic Morlet band of `x` at `f` Hz with `cycles` periods of time width: `(amplitude, instantaneous Hz)` per
 /// sample. Computed in the frequency domain: a Gaussian around `f` (sd `f / cycles`) on positive frequencies only.
@@ -16,14 +15,13 @@ pub fn band(x: &[f32], rate: f32, f: f32, cycles: f32) -> (Vec<f32>, Vec<f32>) {
     }
     let nfft = (n + (4.0 * cycles * rate / f) as usize).next_power_of_two();
     let mut buf: Vec<Complex32> = (0..nfft).map(|k| Complex32::new(if k < n { x[k] } else { 0.0 }, 0.0)).collect();
-    let mut planner = FftPlanner::<f32>::new();
-    planner.plan_fft_forward(nfft).process(&mut buf);
+    crate::plan::forward(nfft).process(&mut buf);
     let sd = f / cycles;
     for (k, c) in buf.iter_mut().enumerate() {
         let hz = k as f32 * rate / nfft as f32;
         *c *= if k > 0 && k < nfft / 2 { 2.0 * (-0.5 * ((hz - f) / sd).powi(2)).exp() } else { 0.0 };
     }
-    planner.plan_fft_inverse(nfft).process(&mut buf);
+    crate::plan::inverse(nfft).process(&mut buf);
     let y: Vec<Complex32> = buf[..n].iter().map(|c| c / nfft as f32).collect();
     let amp: Vec<f32> = y.iter().map(|c| c.norm()).collect();
     let mut inst = vec![f; n];
@@ -47,7 +45,7 @@ pub(crate) fn mod_rate(v: &[f32], rate: f32, lo: f32, hi: f32) -> (f32, f32) {
             Complex32::new(if k < n { (v[k] - mean) * w } else { 0.0 }, 0.0)
         })
         .collect();
-    FftPlanner::<f32>::new().plan_fft_forward(nfft).process(&mut buf);
+    crate::plan::forward(nfft).process(&mut buf);
     let hz = |k: usize| k as f32 * rate / nfft as f32;
     let ks: Vec<usize> = (1..nfft / 2).filter(|&k| hz(k) >= lo && hz(k) <= hi).collect();
     let tot: f32 = ks.iter().map(|&k| buf[k].norm_sqr()).sum();

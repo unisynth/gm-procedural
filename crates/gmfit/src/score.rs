@@ -14,7 +14,6 @@
 use crate::audio::{loop_of, played};
 use gmgen::render::WaveMeta;
 use rustfft::num_complex::Complex32;
-use rustfft::FftPlanner;
 use serde_json::{json, Value};
 
 pub const W_SPEC: f32 = 12.0;
@@ -49,7 +48,7 @@ pub struct Score {
     /// (orig, gen), peaks per frame (orig, gen). Reported and flagged, not scored.
     pub desc: Option<Desc>,
     /// Hearing-model difference at bank speed (design D4p): added, missing, moddiff. Ranked, not scored.
-    pub heard: Option<[f32; 3]>,
+    pub heard: Option<[f32; 4]>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -70,7 +69,7 @@ impl Score {
         json!({"score": r4(self.score), "d_spec": r4(self.d_spec), "d_env": r4(self.d_env), "d_loop": r4(self.d_loop), "d_onset": r4(self.d_onset),
                "d_per": r4(self.d_per), "d_mod": r4(self.d_mod), "flags": self.flags, "f0_orig": self.f0_orig.map(r4), "f0_gen": self.f0_gen.map(r4),
                "desc": self.desc.map(|d| json!({"contrast_orig": r4(d.contrast_orig), "contrast": r4(d.contrast), "perc": [r4(d.perc.0), r4(d.perc.1)], "peaks": [r4(d.peaks.0), r4(d.peaks.1)]})),
-               "hear": self.heard.map(|h| [r4(h[0]), r4(h[1]), r4(h[2])])})
+               "hear": self.heard.map(|h| [r4(h[0]), r4(h[1]), r4(h[2]), r4(h[3])])})
     }
 
     /// Adds the character descriptors over the first second played, with their flags: `lines` (copy ≥ 6 dB
@@ -134,7 +133,7 @@ fn hz_to_mel(f: f32) -> f32 {
 /// Log-mel spectrogram: frames × bands (dB), plus each frame's start sample.
 pub fn mel_spec(x: &[f32], rate: f32, size: usize, bands: usize) -> (Vec<Vec<f32>>, Vec<usize>) {
     let hop = size / 4;
-    let fft = FftPlanner::<f32>::new().plan_fft_forward(size);
+    let fft = crate::plan::forward(size);
     let win: Vec<f32> = (0..size).map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / size as f32).cos()).collect();
     let wsum: f32 = win.iter().sum();
     // Triangular mel filters over bins 0..=size/2.
@@ -292,7 +291,7 @@ pub fn rms_env_win(x: &[f32], win: usize, hop: usize) -> Vec<f32> {
 
 fn loop_power(x: &[f32]) -> Vec<f32> {
     let l = x.len();
-    let fft = FftPlanner::<f32>::new().plan_fft_forward(l);
+    let fft = crate::plan::forward(l);
     let mut buf: Vec<Complex32> = x.iter().map(|v| Complex32::new(*v, 0.0)).collect();
     fft.process(&mut buf);
     buf[..=l / 2].iter().map(|c| c.norm_sqr() * 4.0 / (l * l) as f32).collect()
@@ -518,7 +517,7 @@ fn strongest_partial(x: &[f32], rate: f32) -> Option<f32> {
             Complex32::new(if k < n { x[k] * w } else { 0.0 }, 0.0)
         })
         .collect();
-    FftPlanner::<f32>::new().plan_fft_forward(nfft).process(&mut buf);
+    crate::plan::forward(nfft).process(&mut buf);
     let hz = |k: usize| k as f32 * rate / nfft as f32;
     (1..nfft / 2).filter(|&k| hz(k) >= 100.0 && hz(k) <= 0.45 * rate).max_by(|a, b| buf[*a].norm_sqr().total_cmp(&buf[*b].norm_sqr())).map(hz)
 }
@@ -575,8 +574,7 @@ pub fn periodicity(x: &[f32], rate: f32) -> Option<f32> {
         return None;
     }
     let nfft = (2 * n).next_power_of_two();
-    let mut planner = FftPlanner::<f32>::new();
-    let (fwd, inv) = (planner.plan_fft_forward(nfft), planner.plan_fft_inverse(nfft));
+    let (fwd, inv) = (crate::plan::forward(nfft), crate::plan::inverse(nfft));
     let (lo, hi) = (((0.0005 * rate) as usize).max(2), ((0.025 * rate) as usize).min(n - 1));
     let mut vals = Vec::new();
     for (&a, &e) in frames.iter().zip(&en) {

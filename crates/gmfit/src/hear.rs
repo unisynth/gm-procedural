@@ -10,7 +10,6 @@
 //!   envelope spectrum at 2–20 Hz (shimmer, swish), copy − original. Both loudness-weighted.
 //! Calibrated with same-texture noise surrogates (max added + missing 0.047, |moddiff| 0.017).
 use rustfft::num_complex::Complex32;
-use rustfft::FftPlanner;
 use serde_json::{json, Value};
 
 const N: usize = 1024;
@@ -18,6 +17,8 @@ const HOP: usize = 256;
 /// Noise-floor thresholds (same-texture surrogates).
 pub const AUDIBLE: f32 = 0.05;
 pub const MOD_AUDIBLE: f32 = 0.02;
+/// Roughness difference (dB) below which a copy is as rough as the original (pilots ≤ 0.5).
+pub const ROUGH_AUDIBLE: f32 = 1.0;
 /// Frame-aligned span at the start (s); level distributions after it.
 const ATTACK_S: f32 = 0.15;
 /// Tolerance factor on the original's fluctuation for the distribution part (aligned part: 1.4).
@@ -61,7 +62,7 @@ pub fn excitation(x: &[f32], rate: f32) -> Ear {
     let weight: Vec<f32> = hz.iter().map(|&f| 10f32.powf(ear_db(f).0 / 10.0)).collect();
     let quiet: Vec<f32> = fc.iter().map(|&f| 10f32.powf(ear_db(f).1 / 10.0)).collect();
     let win: Vec<f32> = (0..N).map(|k| 0.5 - 0.5 * (std::f32::consts::TAU * k as f32 / N as f32).cos()).collect();
-    let fft = FftPlanner::<f32>::new().plan_fft_forward(N);
+    let fft = crate::plan::forward(N);
     let pad = N / 2;
     let total = x.len() + pad + N;
     let at = |i: usize| if i >= pad && i - pad < x.len() { x[i - pad] } else { 0.0 };
@@ -125,6 +126,54 @@ pub struct Heard {
     pub swell: f32,
     /// band (Hz) with the largest flutter difference and its sign
     pub flutter_at: f32,
+    /// `roughness` copy − original (dB): strikes blurred into a buzz read negative.
+    pub rough: f32,
+}
+
+/// Fine-time roughness (dB): in 4 bands (0.3–0.8, 0.8–2, 2–4.5, 4.5–10 kHz), the RMS deviation of the 2 ms envelope
+/// (dB) from its 50 ms moving mean over the frames within 40 dB of the band's peak, weighted by band energy. The
+/// 11.6 ms frames of the ear model blur strikes 13 ms apart (a vibraslap heard "like a motor": the copy's strikes
+/// had merged, 3.1 dB smoother; the approved pilot waves differ by ≤ 0.5 dB).
+pub fn roughness(x: &[f32], rate: f32) -> f32 {
+    let n = x.len();
+    if n < (0.02 * rate) as usize {
+        return 0.0;
+    }
+    let mut spec: Vec<Complex32> = x.iter().map(|v| Complex32::new(*v, 0.0)).collect();
+    crate::plan::forward(n).process(&mut spec);
+    let inv = crate::plan::inverse(n);
+    let fr = ((0.002 * rate) as usize).max(1);
+    let (mut acc, mut wsum) = (0.0f32, 0.0f32);
+    for (lo, hi) in [(300.0f32, 800.0f32), (800.0, 2000.0), (2000.0, 4500.0), (4500.0, 10000.0)] {
+        let mut b: Vec<Complex32> = spec
+            .iter()
+            .enumerate()
+            .map(|(k, c)| {
+                let f = k.min(n - k) as f32 * rate / n as f32;
+                if f >= lo && f < hi { *c } else { Complex32::new(0.0, 0.0) }
+            })
+            .collect();
+        inv.process(&mut b);
+        let e: Vec<f32> = b.chunks(fr).filter(|c| c.len() == fr).map(|c| (c.iter().map(|v| v.re * v.re).sum::<f32>() / fr as f32).sqrt() / n as f32).collect();
+        let energy: f32 = e.iter().map(|v| v * v).sum();
+        let d: Vec<f32> = e.iter().map(|v| 20.0 * v.max(1e-12).log10()).collect();
+        let k = 25.min(d.len()).max(1);
+        let top = d.iter().copied().fold(f32::MIN, f32::max);
+        let (mut s2, mut cnt) = (0.0f32, 0usize);
+        for t in 0..d.len() {
+            let (a, z) = (t.saturating_sub(k / 2), (t + k / 2 + 1).min(d.len()));
+            let m = d[a..z].iter().sum::<f32>() / (z - a) as f32;
+            if d[t] > top - 40.0 {
+                s2 += (d[t] - m).powi(2);
+                cnt += 1;
+            }
+        }
+        if cnt > 10 {
+            acc += (s2 / cnt as f32).sqrt() * energy;
+            wsum += energy;
+        }
+    }
+    acc / wsum.max(1e-30)
 }
 
 /// Band-limited resample to play at `speed` (pitch follows, as the sampler does): the spectrum is zero-padded
@@ -136,9 +185,8 @@ pub fn at_speed(x: &[f32], speed: f32) -> Vec<f32> {
     }
     let n = x.len();
     let m = ((n as f32 / speed) as usize).max(2);
-    let mut planner = FftPlanner::<f32>::new();
     let mut buf: Vec<Complex32> = x.iter().map(|v| Complex32::new(*v, 0.0)).collect();
-    planner.plan_fft_forward(n).process(&mut buf);
+    crate::plan::forward(n).process(&mut buf);
     let mut out = vec![Complex32::new(0.0, 0.0); m];
     let half = n.min(m) / 2;
     for k in 0..half {
@@ -147,7 +195,7 @@ pub fn at_speed(x: &[f32], speed: f32) -> Vec<f32> {
             out[m - k] = buf[n - k];
         }
     }
-    planner.plan_fft_inverse(m).process(&mut out);
+    crate::plan::inverse(m).process(&mut out);
     out.iter().map(|c| c.re / n as f32).collect()
 }
 
@@ -243,7 +291,7 @@ pub fn hear(orig: &[f32], copy: &[f32], rate: f32) -> Heard {
             // Envelope spectrum shares (DFT of the band envelope).
             let len = col.len().next_power_of_two().max(2);
             let mut buf: Vec<Complex32> = (0..len).map(|t| Complex32::new(col.get(t).map_or(0.0, |v| v - mean), 0.0)).collect();
-            FftPlanner::<f32>::new().plan_fft_forward(len).process(&mut buf);
+            crate::plan::forward(len).process(&mut buf);
             let fr = rate / HOP as f32;
             let (mut slow, mut all) = (0.0f32, 0.0f32);
             for (kk, c) in buf.iter().enumerate().take(len / 2) {
@@ -281,6 +329,7 @@ pub fn hear(orig: &[f32], copy: &[f32], rate: f32) -> Heard {
         moddiff,
         swell,
         flutter_at: a.centres[jf] * if db[jf] >= da[jf] { 1.0 } else { -1.0 },
+        rough: roughness(copy, rate) - roughness(orig, rate),
     }
 }
 
@@ -294,6 +343,7 @@ impl Heard {
             "added_at": r(&self.added_at), "missing_at": r(&self.missing_at),
             "flutter": crate::score::r4(self.flutter), "moddiff": crate::score::r4(self.moddiff), "swell": crate::score::r4(self.swell),
             "flutter_band_hz": self.flutter_at.abs().round(), "flutter_band_more": self.flutter_at >= 0.0,
+            "rough": crate::score::r4(self.rough),
             "verdict": self.verdict(),
         })
     }
@@ -314,6 +364,13 @@ impl Heard {
                 if self.flutter > 0.0 { "more" } else { "less" },
                 self.flutter_at.abs()
             ));
+        }
+        if self.rough.abs() > ROUGH_AUDIBLE {
+            v.push(if self.rough < 0.0 {
+                format!("smoother by {:.1} dB: strikes or grains blurred together (a buzz, \"like a motor\")", -self.rough)
+            } else {
+                format!("rougher by {:.1} dB: grainier or clickier than the original", self.rough)
+            });
         }
         if self.swell.abs() > 0.03 {
             v.push(format!("{} slow swell/shimmer (2–20 Hz)", if self.swell > 0.0 { "more" } else { "less" }));
@@ -390,6 +447,29 @@ mod tests {
         assert!(h.added + h.missing < AUDIBLE, "{h:?}");
         let quiet = hear(&pings(3, 0.3), &pings(77, 0.1), 22050.0);
         assert!(quiet.missing > AUDIBLE, "{quiet:?}");
+    }
+
+    /// A strike train (13 ms apart, 4 ms decay) against the same strikes smeared into a wash: smoother by > 1 dB;
+    /// the train against itself reseeded: under the threshold.
+    #[test]
+    fn roughness_sees_blurred_strikes() {
+        let train = |seed: u32, decay: f32| {
+            let r = noise(22050, seed);
+            let mut x = vec![0.0f32; 22050];
+            for k in 0..70 {
+                let at = 300 + k * 287;
+                for t in 0..1200.min(22050 - at) {
+                    x[at + t] += r[at + t] * (-(t as f32) / (decay * 22050.0)).exp();
+                }
+            }
+            x
+        };
+        let (a, b, wash) = (train(3, 0.004), train(9, 0.004), train(3, 0.03));
+        let same = hear(&a, &b, 22050.0).rough;
+        assert!(same.abs() < ROUGH_AUDIBLE, "reseeded train {same}");
+        let h = hear(&a, &wash, 22050.0);
+        assert!(h.rough < -ROUGH_AUDIBLE, "wash {}", h.rough);
+        assert!(h.verdict().iter().any(|v| v.contains("smoother")), "{:?}", h.verdict());
     }
 
     #[test]

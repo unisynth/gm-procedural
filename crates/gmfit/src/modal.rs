@@ -13,7 +13,6 @@ use gmgen::params::{Layer, Params};
 use gmgen::render::WaveMeta;
 use gmgen::schema::{family, Region};
 use rustfft::num_complex::Complex32;
-use rustfft::FftPlanner;
 
 fn power_spectrum(x: &[f32], nfft: usize) -> Vec<f32> {
     let n = x.len().min(nfft);
@@ -23,7 +22,7 @@ fn power_spectrum(x: &[f32], nfft: usize) -> Vec<f32> {
             Complex32::new(if k < n { x[k] * w } else { 0.0 }, 0.0)
         })
         .collect();
-    FftPlanner::<f32>::new().plan_fft_forward(nfft).process(&mut buf);
+    crate::plan::forward(nfft).process(&mut buf);
     buf[..nfft / 2 + 1].iter().map(|c| c.norm_sqr()).collect()
 }
 
@@ -174,15 +173,14 @@ pub fn glide(x: &[f32], rate: f32, f: f32) -> Option<(f32, f32)> {
     }
     let nfft = (2 * n).next_power_of_two();
     let mut buf: Vec<Complex32> = (0..nfft).map(|k| Complex32::new(if k < n { x[k] } else { 0.0 }, 0.0)).collect();
-    let mut planner = FftPlanner::<f32>::new();
-    planner.plan_fft_forward(nfft).process(&mut buf);
+    crate::plan::forward(nfft).process(&mut buf);
     for (k, c) in buf.iter_mut().enumerate() {
         let hz = k.min(nfft - k) as f32 * rate / nfft as f32;
         if hz < 0.6 * f || hz > 2.0 * f {
             *c = Complex32::new(0.0, 0.0);
         }
     }
-    planner.plan_fft_inverse(nfft).process(&mut buf);
+    crate::plan::inverse(nfft).process(&mut buf);
     let y: Vec<f32> = buf[..n].iter().map(|c| c.re).collect();
     let mut cross: Vec<f32> = Vec::new();
     for k in 1..n {
@@ -221,7 +219,7 @@ pub fn glide(x: &[f32], rate: f32, f: f32) -> Option<(f32, f32)> {
 pub fn sparse_loop(lp: &[f32], rate: f32, max: usize) -> Vec<[f32; 4]> {
     let l = lp.len();
     let mut buf: Vec<Complex32> = lp.iter().map(|v| Complex32::new(*v, 0.0)).collect();
-    FftPlanner::<f32>::new().plan_fft_forward(l).process(&mut buf);
+    crate::plan::forward(l).process(&mut buf);
     // Prominent bins only (≥ 10 dB over the median of ±25 bins); the residual noise layer carries the rest.
     let pw: Vec<f32> = buf[..l / 2 + 1].iter().map(|c| c.norm_sqr()).collect();
     let prominent = |k: usize| {
@@ -531,9 +529,109 @@ pub fn candidates(i: usize, orig: &[f32], m: &WaveMeta) -> Vec<Params> {
                     out.push(q);
                 }
             }
+            // (c) rattle (vibraslap): measured strikes of the loop, short rings, a broadband click each.
+            out.extend(rattle(i, orig, rate, s, l, attack.as_ref()));
         }
     }
     out.into_iter().filter(|p| p.validate().is_ok()).collect()
+}
+
+/// Strikes of a loop: (sample from the loop start, dB) of 0.5 ms envelope peaks that are maxima over ±4 ms and within
+/// 20 dB of the loudest (loop tiled ×3 so the ends wrap).
+pub fn strikes(lpx: &[f32], rate: f32) -> Vec<(usize, f32)> {
+    let l = lpx.len();
+    let tiled: Vec<f32> = lpx.iter().chain(lpx).chain(lpx).copied().collect();
+    let fr = ((0.0005 * rate) as usize).max(1);
+    let d: Vec<f32> = (0..tiled.len().saturating_sub(2 * fr)).step_by(fr).map(|i| {
+        let c = &tiled[i..i + 2 * fr];
+        10.0 * (c.iter().map(|v| v * v).sum::<f32>() / c.len() as f32).max(1e-20).log10()
+    }).collect();
+    let top = d.iter().copied().fold(f32::MIN, f32::max);
+    let w = ((0.004 * rate) as usize / fr).max(1);
+    (w..d.len().saturating_sub(w))
+        .filter(|&k| d[k] > top - 20.0 && d[k - w..=k + w].iter().all(|v| *v <= d[k]))
+        .map(|k| (k * fr, d[k]))
+        .filter(|&(i, _)| i >= l && i < 2 * l)
+        .map(|(i, v)| (i - l, v))
+        .collect()
+}
+
+/// Rattle candidates for a loop of `l` samples at `s`: the measured strikes as the hit table, the loop's 3 strongest
+/// partials ringing with the strikes' decay (median −15 dB fall / 1.73), a broadband click per strike (0 / +6 dB
+/// above 1 kHz), levelled to the loop. A vibraslap is 8 strikes per 109 ms loop, each gone within ~8 ms: rings that
+/// last longer merge the strikes into a steady tone ("like a motor").
+fn rattle(i: usize, orig: &[f32], rate: f32, s: usize, l: usize, attack: Option<&Layer>) -> Vec<Params> {
+    let lpx = &orig[s..s + l];
+    let st = strikes(lpx, rate);
+    if st.len() < 3 || st.len() > 32 {
+        return Vec::new();
+    }
+    let fr = ((0.0005 * rate) as usize).max(1);
+    let tiled: Vec<f32> = lpx.iter().chain(lpx).copied().collect();
+    let env: Vec<f32> = tiled.chunks(fr).map(|c| 10.0 * (c.iter().map(|v| v * v).sum::<f32>() / c.len() as f32).max(1e-20).log10()).collect();
+    let mut falls: Vec<f32> = st
+        .iter()
+        .filter_map(|&(at, db)| (at / fr..env.len()).find(|&k| env[k] < db - 15.0).map(|k| (k * fr - at) as f32 / rate))
+        .collect();
+    falls.sort_by(f32::total_cmp);
+    let dec = falls.get(falls.len() / 2).map_or(0.005, |t| t / 1.73).clamp(0.001, 0.05);
+    let top = st.iter().map(|x| x.1).fold(f32::MIN, f32::max);
+    // The 3 strongest partials, dropping any within 5 % of a stronger one (two close modes beat).
+    let mut ps: Vec<[f32; 4]> = Vec::new();
+    for p in partials(lpx, rate, 6) {
+        if ps.len() < 3 && ps.iter().all(|q| (p[0] / q[0] - 1.0).abs() > 0.05) {
+            ps.push(p);
+        }
+    }
+    let modes: Vec<f32> = ps.iter().flat_map(|p| [p[0], p[1], dec, 0.0]).collect();
+    if modes.is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<(f32, Params)> = Vec::new();
+    // Grid: click level and band (a vibraslap's strikes are bright: 4–10 kHz carries as much as the 1.25 kHz ring),
+    // mode attack (an instant onset splatters below the ring); the best two by the fit objective.
+    for (click, hp, ha) in [0.0f32, 6.0, 12.0, 18.0].into_iter().flat_map(|c| [1000.0f32, 3000.0].into_iter().flat_map(move |h| [0.0002f32, 0.001].map(|a| (c, h, a)))) {
+        let mut h = layer(Region::Sustain, Vec::new());
+        h.tables[0] = modes.clone();
+        let m0 = modes[1];
+        for r in h.tables[0].chunks_mut(4) {
+            r[1] -= m0;
+        }
+        h.tables[1] = st.iter().flat_map(|&(at, db)| [at as f32 / rate, (db - top).clamp(-60.0, 24.0)]).collect();
+        h.set("hits", st.len() as f32);
+        h.set("click_db", click);
+        h.set("click_decay", 0.002);
+        h.set("click_hp", hp);
+        h.set("ha", ha);
+        h.set("click_lp", 20000.0);
+        h.set("a", 0.0);
+        crate::analyze::open_for_fit(&mut h);
+        let mut q = Params::default();
+        if let Some(a) = attack {
+            q.layers.push(a.clone());
+        }
+        q.layers.push(h);
+        let k = q.layers.len() - 1;
+        if attack.is_some() {
+            // The attack layer covers the head: the train starts at the loop (5 ms fade-in).
+            let f = 0.005f32.min(s as f32 / rate);
+            q.layers[k].set("dly", s as f32 / rate - f);
+            q.layers[k].set("a", f.max(0.0005));
+        }
+        // The click does not follow `level_db`: settle the level in 3 passes.
+        for _ in 0..3 {
+            crate::analyze::calibrate(i, &mut q, k, crate::analyze::rms(lpx), s..s + l);
+        }
+        if q.validate().is_ok() {
+            out.push((crate::fit::score_of(orig, i, &q), q));
+        }
+    }
+    out.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let out: Vec<Params> = out.into_iter().take(2).map(|x| x.1).collect();
+    if std::env::var_os("GMFIT_TRACE").is_some() {
+        eprintln!("modal rattle: {} strikes, ring decay {dec:.4} s, modes {modes:?}", st.len());
+    }
+    out
 }
 
 #[cfg(test)]
@@ -590,6 +688,25 @@ mod tests {
         }
         let on = onsets(&x, SR);
         assert_eq!(on.len(), 5, "{on:?}");
+    }
+
+    #[test]
+    fn strikes_of_a_rattle_loop() {
+        let hit = decaying(&[(1250.0, 0.5, 0.004)], 0.012);
+        let l = (0.109 * SR) as usize;
+        let mut x = vec![0.0f32; l];
+        let times = [2usize, 15, 29, 42, 56, 69, 83, 98];
+        for k in times {
+            let a = (k as f32 * 0.001 * SR) as usize;
+            for (j, v) in hit.iter().enumerate() {
+                x[(a + j) % l] += v;
+            }
+        }
+        let st = strikes(&x, SR);
+        assert_eq!(st.len(), 8, "{st:?}");
+        for (s, t) in st.iter().zip(times) {
+            assert!((s.0 as f32 / SR * 1000.0 - t as f32).abs() < 1.5, "{st:?}");
+        }
     }
 
     #[test]

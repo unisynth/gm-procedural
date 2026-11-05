@@ -50,11 +50,13 @@ pub mod fm;
 pub mod formant;
 pub mod hear;
 pub mod modal;
+pub mod plan;
 pub mod wavelet;
 pub mod priors;
 pub mod score;
 pub mod shaker;
 pub mod sheet;
+pub mod sf2;
 
 use gmgen::params::Params;
 use gmgen::params_json::WaveFile;
@@ -166,7 +168,7 @@ pub fn evaluate(orig: &[f32], i: usize, p: &Params) -> (score::Score, Option<sco
         let speed = play_speed(i).1;
         let (a, b) = (audio::played(orig, &m, 1.0), audio::played(&synth, &m, 1.0));
         let h = hear::hear(&hear::at_speed(&a, speed), &hear::at_speed(&b, speed), m.rate as f32);
-        s.heard = Some([h.added, h.missing, h.moddiff]);
+        s.heard = Some([h.added, h.missing, h.moddiff, h.rough]);
     }
     let plain = (!p.correction.is_empty() || !p.tf.is_empty() || !p.env.is_empty()).then(|| {
         let mut q = p.clone();
@@ -256,8 +258,9 @@ pub const HEAR_PENALTY: f32 = 0.5;
 
 /// Audible excess of a hearing-model difference [added, missing, moddiff] over its noise floor (an independent take
 /// of the same noise): 0 for every approved pilot wave.
-pub fn hear_excess(h: [f32; 3]) -> f32 {
-    (h[0] + h[1] - hear::AUDIBLE).max(0.0) + (h[2] - hear::MOD_AUDIBLE).max(0.0)
+/// Roughness difference beyond `ROUGH_AUDIBLE` counts 0.1 per dB.
+pub fn hear_excess(h: [f32; 4]) -> f32 {
+    (h[0] + h[1] - hear::AUDIBLE).max(0.0) + (h[2] - hear::MOD_AUDIBLE).max(0.0) + 0.1 * (h[3].abs() - hear::ROUGH_AUDIBLE).max(0.0)
 }
 
 /// Rank of a scored version: score − `CHAR_PENALTY` per character flag − `HEAR_PENALTY` × audible excess. A version
@@ -273,9 +276,9 @@ pub fn rank(s: &score::Score) -> f32 {
 /// Same from a score JSON object (`scores.json` row).
 pub fn rank_json(v: &Value) -> Option<f32> {
     let n = v["flags"].as_array().map_or(0, |a| a.iter().filter(|f| f.as_str().is_some_and(|f| CHAR_FLAGS.contains(&f))).count());
-    let h = v["hear"].as_array().filter(|a| a.len() == 3).map(|a| {
-        let g = |k: usize| a[k].as_f64().unwrap_or(0.0) as f32;
-        hear_excess([g(0), g(1), g(2)])
+    let h = v["hear"].as_array().filter(|a| a.len() >= 3).map(|a| {
+        let g = |k: usize| a.get(k).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
+        hear_excess([g(0), g(1), g(2), g(3)])
     });
     Some(v["score"].as_f64()? as f32 - CHAR_PENALTY * n as f32 - HEAR_PENALTY * h.unwrap_or(0.0))
 }
