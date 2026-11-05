@@ -7,9 +7,86 @@ pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// `assets/gm/` in the repository.
+/// Target set (change add-gmplus-bank, D3): `gm` fits Windows `gm.dls` at its own rates; `plus` fits the gmplus
+/// soundfont targets on the 32 kHz skeleton. Chosen once per process (`select_set`), default `gm`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Set {
+    Gm,
+    Plus,
+}
+
+impl Set {
+    pub fn from_name(s: &str) -> Result<Set, String> {
+        match s {
+            "gm" => Ok(Set::Gm),
+            "plus" => Ok(Set::Plus),
+            _ => Err(format!("unknown set {s} (gm | plus)")),
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Set::Gm => "gm",
+            Set::Plus => "gm-plus",
+        }
+    }
+}
+
+static SET: std::sync::OnceLock<Set> = std::sync::OnceLock::new();
+
+/// Selects the set for this process; a second, different choice is an error.
+pub fn select_set(s: Set) -> Result<(), String> {
+    let got = *SET.get_or_init(|| s);
+    if got == s { Ok(()) } else { Err(format!("set already {got:?}")) }
+}
+
+pub fn set() -> Set {
+    SET.get().copied().unwrap_or(Set::Gm)
+}
+
+/// `assets/gm/` or `assets/gm-plus/` in the repository.
 pub fn assets_dir() -> PathBuf {
-    repo_root().join("assets/gm")
+    repo_root().join("assets").join(set().name())
+}
+
+/// `build/gm/` or `build/gm-plus/`.
+pub fn build_dir() -> PathBuf {
+    repo_root().join("build").join(set().name())
+}
+
+/// The plus structure (`assets/gm-plus/structure.json`), read once.
+fn plus_bank() -> Result<&'static dls::write::Bank, String> {
+    static B: std::sync::OnceLock<Result<dls::write::Bank, String>> = std::sync::OnceLock::new();
+    B.get_or_init(|| {
+        let p = repo_root().join("assets/gm-plus/structure.json");
+        let t = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e} (run gmfit --set plus extract)", p.display()))?;
+        gmgen::structure::from_json(&t)
+    })
+    .as_ref()
+    .map_err(Clone::clone)
+}
+
+/// Bank structure of the selected set (waves empty).
+pub fn skeleton() -> dls::write::Bank {
+    match set() {
+        Set::Gm => gmgen::bank::skeleton(),
+        Set::Plus => plus_bank().unwrap_or_else(|e| panic!("{e}")).clone(),
+    }
+}
+
+/// Rate, length, unity note, tuning and loop of wave `i` in the selected set.
+pub fn meta(i: usize) -> Option<gmgen::render::WaveMeta> {
+    match set() {
+        Set::Gm => gmgen::bank::meta(i),
+        Set::Plus => {
+            let w = plus_bank().unwrap_or_else(|e| panic!("{e}")).waves.get(i)?;
+            Some(gmgen::render::WaveMeta { rate: w.rate, len: w.samples.len(), unity: w.wsmp.unity_note, fine: w.wsmp.fine_tune, looped: w.wsmp.looped })
+        }
+    }
+}
+
+/// Wave `i` rendered from `p` on the selected set's skeleton (seed = wave index, as `gmgen::render_wave`).
+pub fn render_wave(i: usize, p: &Params) -> Vec<f32> {
+    meta(i).map_or_else(Vec::new, |m| gmgen::render::render(&m, p, i as u32))
 }
 
 /// The original bank bytes from `GM_DLS` (set and non-empty), or a message saying it is required.
@@ -45,11 +122,13 @@ pub mod analyze;
 pub mod audio;
 pub mod cmaes;
 pub mod desc;
+pub mod dsp;
 pub mod fit;
 pub mod fm;
 pub mod formant;
 pub mod hear;
 pub mod modal;
+pub mod plus;
 pub mod plan;
 pub mod wavelet;
 pub mod priors;
@@ -68,28 +147,44 @@ pub const CATEGORIES: [&str; 16] = [
     "synthfx", "ethnic", "percussive", "sfx",
 ];
 
-/// The original bank, loaded once from `GM_DLS`.
+/// The fit targets: the original bank from `GM_DLS`, plus (set `plus`) the soundfont from `GMPLUS_SF2`.
 pub struct Orig {
     bytes: Vec<u8>,
+    plus: Option<plus::Targets>,
 }
 
 impl Orig {
     pub fn load() -> Result<Orig, String> {
+        let plus = match set() {
+            Set::Plus => Some(plus::Targets::load()?),
+            Set::Gm => None,
+        };
         let bytes = original_bank()?;
         dls::Dls::parse(&bytes).map_err(|e| format!("GM_DLS is not a DLS bank: {e:?}"))?;
-        Ok(Orig { bytes })
+        Ok(Orig { bytes, plus })
     }
     pub fn dls(&self) -> dls::Dls<'_> {
         dls::Dls::parse(&self.bytes).expect("checked at load")
     }
+    /// The target of wave `i`: the original wave (`gm`) or the gmplus target (`plus`).
     pub fn wave(&self, i: usize) -> Vec<f32> {
+        match &self.plus {
+            Some(t) => t.wave(&self.dls(), i).map(|t| t.samples).unwrap_or_default(),
+            None => audio::original_wave(&self.dls(), i),
+        }
+    }
+    /// The Windows `gm.dls` wave, whatever the set.
+    pub fn gm_wave(&self, i: usize) -> Vec<f32> {
         audio::original_wave(&self.dls(), i)
+    }
+    pub fn targets(&self) -> Option<&plus::Targets> {
+        self.plus.as_ref()
     }
 }
 
 /// Instruments using a wave: names ("drums:<kit> key N" for kits) and the GM category of the first user.
 pub fn users(i: usize) -> (Vec<String>, &'static str) {
-    let bank = gmgen::bank::skeleton();
+    let bank = skeleton();
     let mut names = Vec::new();
     let mut cat = "unused";
     for ins in &bank.instruments {
@@ -119,11 +214,29 @@ pub fn users(i: usize) -> (Vec<String>, &'static str) {
 /// first); else the main melodic user (bank 0 first), at the unity note when its key range holds it, otherwise
 /// the nearest key of the range. Listening pages play waves at this speed (kick 1.0, belltree 0.71).
 pub fn play_speed(i: usize) -> (u8, f32, String) {
-    let bank = gmgen::bank::skeleton();
-    let wave_ws = gmgen::bank::meta(i).map(|m| (m.unity, m.fine));
-    let mut best: Option<(u8, (u8, f32, String))> = None;
-    for ins in &bank.instruments {
-        for r in ins.regions.iter().filter(|r| r.wave as usize == i) {
+    let bank = skeleton();
+    main_user(&bank, meta(i).map(|m| (m.unity, m.fine)), i).map_or((60, 1.0, String::new()), |u| {
+        (u.key, u.speed, String::from_utf8_lossy(&bank.instruments[u.ins].name).trim().to_string())
+    })
+}
+
+/// The region that plays wave `i` in `play_speed`, and how.
+#[derive(Clone, Copy, Debug)]
+pub struct User {
+    /// Index into `bank.instruments`, and of the region in it.
+    pub ins: usize,
+    pub region: usize,
+    pub key: u8,
+    pub speed: f32,
+    pub unity: u16,
+    pub fine: i16,
+}
+
+/// `play_speed`'s choice on any bank: `wave_ws` = the wave's own (unity, fine).
+pub fn main_user(bank: &dls::write::Bank, wave_ws: Option<(u16, i16)>, i: usize) -> Option<User> {
+    let mut best: Option<(u8, User)> = None;
+    for (ii, ins) in bank.instruments.iter().enumerate() {
+        for (ri, r) in ins.regions.iter().enumerate().filter(|(_, r)| r.wave as usize == i) {
             let (unity, fine) = r.wsmp.as_ref().map(|w| (w.unity_note, w.fine_tune)).or(wave_ws).unwrap_or((60, 0));
             let (lo, hi) = (r.key_lo.min(127), r.key_hi.min(127));
             let (rank, key) = if ins.drums {
@@ -133,12 +246,11 @@ pub fn play_speed(i: usize) -> (u8, f32, String) {
             };
             if best.as_ref().is_none_or(|b| rank < b.0) {
                 let speed = 2f32.powf((key as f32 - unity as f32) / 12.0 + fine as f32 / 1200.0);
-                let name = String::from_utf8_lossy(&ins.name).trim().to_string();
-                best = Some((rank, (key as u8, speed, name)));
+                best = Some((rank, User { ins: ii, region: ri, key: key as u8, speed, unity, fine }));
             }
         }
     }
-    best.map_or((60, 1.0, String::new()), |b| b.1)
+    best.map(|b| b.1)
 }
 
 pub fn wave_path(i: usize) -> PathBuf {
@@ -153,29 +265,28 @@ pub fn load_wave(i: usize) -> Result<WaveFile, String> {
 }
 
 pub fn out_dir(i: usize) -> PathBuf {
-    let d = repo_root().join("build/gm").join(format!("{i:03}"));
+    let d = build_dir().join(format!("{i:03}"));
     let _ = std::fs::create_dir_all(&d);
     d
 }
 
 /// Renders `p` for wave `i` and scores it with and without the corrections (harmonic, `tf`, `env`).
 pub fn evaluate(orig: &[f32], i: usize, p: &Params) -> (score::Score, Option<score::Score>, Vec<f32>) {
-    let m = gmgen::bank::meta(i).expect("wave meta");
-    let synth = gmgen::render_wave(i, p);
+    let m = meta(i).expect("wave meta");
+    let synth = render_wave(i, p);
     let mut s = score::score(orig, &synth, &m);
     s.describe(orig, &synth, &m);
     if !s.flags.contains(&"nan") {
         let speed = play_speed(i).1;
-        let (a, b) = (audio::played(orig, &m, 1.0), audio::played(&synth, &m, 1.0));
-        let h = hear::hear(&hear::at_speed(&a, speed), &hear::at_speed(&b, speed), m.rate as f32);
-        s.heard = Some([h.added, h.missing, h.moddiff, h.rough]);
+        let h = hear::listen(orig, &synth, &m, speed, s.f0_orig.is_some());
+        s.heard = Some([h.added, h.missing, h.moddiff, h.rough, h.ring]);
     }
     let plain = (!p.correction.is_empty() || !p.tf.is_empty() || !p.env.is_empty()).then(|| {
         let mut q = p.clone();
         q.correction.clear();
         q.tf.clear();
         q.env.clear();
-        score::score(orig, &gmgen::render_wave(i, &q), &m)
+        score::score(orig, &render_wave(i, &q), &m)
     });
     (s, plain, synth)
 }
@@ -259,8 +370,11 @@ pub const HEAR_PENALTY: f32 = 0.5;
 /// Audible excess of a hearing-model difference [added, missing, moddiff] over its noise floor (an independent take
 /// of the same noise): 0 for every approved pilot wave.
 /// Roughness difference beyond `ROUGH_AUDIBLE` counts 0.1 per dB.
-pub fn hear_excess(h: [f32; 4]) -> f32 {
-    (h[0] + h[1] - hear::AUDIBLE).max(0.0) + (h[2] - hear::MOD_AUDIBLE).max(0.0) + 0.1 * (h[3].abs() - hear::ROUGH_AUDIBLE).max(0.0)
+pub fn hear_excess(h: [f32; 5]) -> f32 {
+    (h[0] + h[1] - hear::AUDIBLE).max(0.0)
+        + (h[2] - hear::MOD_AUDIBLE).max(0.0)
+        + 0.1 * (h[3].abs() - hear::ROUGH_AUDIBLE).max(0.0)
+        + 0.5 * (h[4].abs() - hear::RING_AUDIBLE).max(0.0)
 }
 
 /// Rank of a scored version: score − `CHAR_PENALTY` per character flag − `HEAR_PENALTY` × audible excess. A version
@@ -278,7 +392,7 @@ pub fn rank_json(v: &Value) -> Option<f32> {
     let n = v["flags"].as_array().map_or(0, |a| a.iter().filter(|f| f.as_str().is_some_and(|f| CHAR_FLAGS.contains(&f))).count());
     let h = v["hear"].as_array().filter(|a| a.len() >= 3).map(|a| {
         let g = |k: usize| a.get(k).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;
-        hear_excess([g(0), g(1), g(2), g(3)])
+        hear_excess([g(0), g(1), g(2), g(3), g(4)])
     });
     Some(v["score"].as_f64()? as f32 - CHAR_PENALTY * n as f32 - HEAR_PENALTY * h.unwrap_or(0.0))
 }

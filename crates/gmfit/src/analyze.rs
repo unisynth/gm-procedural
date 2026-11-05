@@ -18,7 +18,7 @@ use rustfft::num_complex::Complex32;
 
 /// Prior of the first instrument that uses wave `i` (standard kit preferred for drum waves).
 pub fn prior_for_wave(i: usize) -> Prior {
-    let bank = gmgen::bank::skeleton();
+    let bank = crate::skeleton();
     let mut best: Option<(u8, Prior)> = None;
     for ins in &bank.instruments {
         for r in ins.regions.iter().filter(|r| r.wave as usize == i) {
@@ -148,7 +148,7 @@ pub(crate) fn rms(x: &[f32]) -> f32 {
 pub(crate) fn calibrate(i: usize, p: &mut Params, k: usize, target: f32, range: std::ops::Range<usize>) {
     let mut solo = p.clone();
     solo.layers = vec![p.layers[k].clone()];
-    let x = gmgen::render_wave(i, &solo);
+    let x = crate::render_wave(i, &solo);
     let r = rms(&x[range.start.min(x.len())..range.end.min(x.len())]);
     if r > 1e-9 && target > 1e-9 {
         let cur = p.layers[k].get("level_db");
@@ -215,7 +215,7 @@ pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
     if per < 10 {
         return false;
     }
-    let (mg, _) = dft(&gmgen::render_wave(i, &base)[s..s + l]);
+    let (mg, _) = dft(&crate::render_wave(i, &base)[s..s + l]);
     let nb = mo.len().min(mg.len());
     let far = |b: usize| {
         let o = b % per;
@@ -280,7 +280,7 @@ pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
         }
         vals.iter().sum::<f32>() / vals.len().max(1) as f32
     };
-    let base_render = gmgen::render_wave(i, &base);
+    let base_render = crate::render_wave(i, &base);
     let build = |lp: Option<f32>| -> Option<Params> {
         let mut nz = Layer::new(family("noise").unwrap(), Region::Sustain);
         // dens: half spectrum, bin b at b·rate/l. Bands far below the strongest add nothing audible.
@@ -316,7 +316,7 @@ pub fn gap_noise(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) -> bool {
         // aperiodic share = (1 − p_orig) − (1 − p_model without noise), current = (1 − p_model) − (1 − p_without).
         let (po, pn): (Vec<f32>, Vec<f32>) = ranges.iter().map(|&r| (periodicity(orig, r), periodicity(&base_render, r))).unzip();
         for _ in 0..3 {
-            let g = gmgen::render_wave(i, &q);
+            let g = crate::render_wave(i, &q);
             let (mq, _) = dft(&g[s..s + l]);
             for (j, &r) in ranges.iter().enumerate() {
                 let want = pn[j] - po[j];
@@ -392,7 +392,7 @@ pub fn noise_loop(i: usize, orig: &[f32], m: &WaveMeta, p: &Params) -> Vec<Param
     let rate = m.rate as f32;
     let tile = |x: &[f32]| -> Vec<f32> { x[s..s + l].iter().cycle().take(l.max(3 * 8192)).copied().collect() };
     let lo = tile(orig);
-    let (c_orig, c_diff) = crate::desc::contrast_pair(&lo, &tile(&gmgen::render_wave(i, p)), rate);
+    let (c_orig, c_diff) = crate::desc::contrast_pair(&lo, &tile(&crate::render_wave(i, p)), rate);
     if c_orig > crate::desc::WASH_DB || c_diff < crate::score::LINES_DB {
         return vec![];
     }
@@ -411,7 +411,7 @@ pub fn noise_loop(i: usize, orig: &[f32], m: &WaveMeta, p: &Params) -> Vec<Param
     let solo_e = |q: &Params, n: usize| -> f32 {
         let mut solo = q.clone();
         solo.layers = vec![q.layers[n].clone()];
-        let (ms, _) = dft(&gmgen::render_wave(i, &solo)[s..s + l]);
+        let (ms, _) = dft(&crate::render_wave(i, &solo)[s..s + l]);
         ms.iter().skip(1).map(|v| v * v).sum()
     };
     let total_o: f32 = po.iter().skip(1).sum();
@@ -494,7 +494,7 @@ pub fn noise_loop(i: usize, orig: &[f32], m: &WaveMeta, p: &Params) -> Vec<Param
         };
         set_level(&mut q);
         for _ in 0..3 {
-            let (mq, _) = dft(&gmgen::render_wave(i, &q)[s..s + l]);
+            let (mq, _) = dft(&crate::render_wave(i, &q)[s..s + l]);
             let eq = band_e(&mq.iter().map(|v| v * v).collect::<Vec<_>>());
             let t = &mut q.layers[n].tables[0];
             for j in 0..NB {
@@ -573,7 +573,7 @@ pub fn pick_phase_seed(i: usize, orig: &[f32], m: &WaveMeta, p: &mut Params) {
     for seed in 0..=16 {
         let mut q = p.clone();
         q.layers[k].set("phase_seed", seed as f32);
-        let bg = b(&gmgen::render_wave(i, &q));
+        let bg = b(&crate::render_wave(i, &q));
         let d: f32 = bg.iter().zip(&target).map(|(g, o)| (g - o).abs()).sum();
         if std::env::var_os("GMFIT_TRACE").is_some() {
             eprintln!("phase_seed {seed}: {bg:.2?} vs {target:.2?} → {d:.2}");
@@ -965,7 +965,22 @@ pub fn analyze_alts(i: usize, orig: &[f32], m: &WaveMeta, alts: &mut Vec<(f32, P
         let cur = crate::rank_of(orig, i, &p);
         let mut alone: Vec<(f32, Params)> =
             crate::shaker::candidates(i, orig, m).into_iter().map(|q| (crate::rank_of(orig, i, &q), q)).collect();
+        // The current model's hiss with ringing droplets in place of its shaker (water: `shaker::ring_combos`).
+        for q in crate::shaker::ring_combos(i, orig, m, &p) {
+            let r = crate::rank_of(orig, i, &q);
+            if std::env::var_os("GMFIT_TRACE").is_some() {
+                eprintln!("shaker ring combo ({} layers): rank {r:.4}", q.layers.len());
+            }
+            alone.push((r, q));
+        }
         alone.sort_by(|a, b| b.0.total_cmp(&a.0));
+        if let Ok(dir) = std::env::var("GMFIT_SHAKER_ALL") {
+            for (k, (r, q)) in alone.iter().enumerate().take(8) {
+                eprintln!("shaker alone {k}: rank {r:.4}, {} layers", q.layers.len());
+                let wf = WaveFile { wave: i as u32, params: q.clone(), placeholder: false, note: String::new() };
+                let _ = std::fs::write(format!("{dir}/shaker-{i}-{k}.json"), gmgen::params_json::to_json(&wf));
+            }
+        }
         // Also the current model + a shaker layer for its clicks (a tambourine: membrane hit + jingles; a stream:
         // the shaped noise + droplets). The shaker takes 30/50/70 % of the original's energy and the model's layers
         // give it up — not levelled to the residual: two independent noises never cancel, so a noise model's

@@ -48,7 +48,7 @@ pub struct Score {
     /// (orig, gen), peaks per frame (orig, gen). Reported and flagged, not scored.
     pub desc: Option<Desc>,
     /// Hearing-model difference at bank speed (design D4p): added, missing, moddiff. Ranked, not scored.
-    pub heard: Option<[f32; 4]>,
+    pub heard: Option<[f32; 5]>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -69,7 +69,7 @@ impl Score {
         json!({"score": r4(self.score), "d_spec": r4(self.d_spec), "d_env": r4(self.d_env), "d_loop": r4(self.d_loop), "d_onset": r4(self.d_onset),
                "d_per": r4(self.d_per), "d_mod": r4(self.d_mod), "flags": self.flags, "f0_orig": self.f0_orig.map(r4), "f0_gen": self.f0_gen.map(r4),
                "desc": self.desc.map(|d| json!({"contrast_orig": r4(d.contrast_orig), "contrast": r4(d.contrast), "perc": [r4(d.perc.0), r4(d.perc.1)], "peaks": [r4(d.peaks.0), r4(d.peaks.1)]})),
-               "hear": self.heard.map(|h| [r4(h[0]), r4(h[1]), r4(h[2]), r4(h[3])])})
+               "hear": self.heard.map(|h| [r4(h[0]), r4(h[1]), r4(h[2]), r4(h[3]), r4(h[4])])})
     }
 
     /// Adds the character descriptors over the first second played, with their flags: `lines` (copy ≥ 6 dB

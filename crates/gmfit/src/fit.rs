@@ -92,17 +92,16 @@ fn vars(p: &Params, only: Option<&[String]>) -> Vec<Var> {
 /// listener would hear as different — e.g. a harmonic correction lifting the highs of an unpitched loop). No
 /// descriptors: too slow for the fit loop.
 pub fn score_of(orig: &[f32], i: usize, p: &Params) -> f32 {
-    let m = gmgen::bank::meta(i).expect("wave meta");
-    let synth = gmgen::render_wave(i, p);
+    let m = crate::meta(i).expect("wave meta");
+    let synth = crate::render_wave(i, p);
     let s = crate::score::score(orig, &synth, &m);
     // A broken render must lose to every real one (with the hearing penalty those go below 0).
     if s.flags.contains(&"nan") {
         return -1.0;
     }
     let speed = crate::play_speed(i).1;
-    let (a, b) = (crate::audio::played(orig, &m, 1.0), crate::audio::played(&synth, &m, 1.0));
-    let h = crate::hear::hear(&crate::hear::at_speed(&a, speed), &crate::hear::at_speed(&b, speed), m.rate as f32);
-    s.score - crate::HEAR_PENALTY * crate::hear_excess([h.added, h.missing, h.moddiff, h.rough])
+    let h = crate::hear::listen(orig, &synth, &m, speed, s.f0_orig.is_some());
+    s.score - crate::HEAR_PENALTY * crate::hear_excess([h.added, h.missing, h.moddiff, h.rough, h.ring])
 }
 
 type Job = Box<dyn FnOnce() + Send>;
@@ -209,7 +208,7 @@ fn avg_power(x: &[f32]) -> Vec<f32> {
 /// Moves each `noise` band gain by the band's average-spectrum level error (between neighbouring band centres,
 /// geometric edges); 3 passes, each kept only if the score improves.
 pub fn refine_bands(orig: &[f32], i: usize, start: &Params, start_score: f32) -> (Params, f32) {
-    let m = gmgen::bank::meta(i).unwrap();
+    let m = crate::meta(i).unwrap();
     let rate = m.rate as f32;
     let (mut best, mut best_score) = (start.clone(), start_score);
     let po = avg_power(&crate::audio::played(orig, &m, crate::score::PLAYED_SECS));
@@ -218,7 +217,7 @@ pub fn refine_bands(orig: &[f32], i: usize, start: &Params, start_score: f32) ->
             continue;
         }
         for _ in 0..3 {
-            let synth = gmgen::render_wave(i, &best);
+            let synth = crate::render_wave(i, &best);
             let pg = avg_power(&crate::audio::played(&synth, &m, crate::score::PLAYED_SECS));
             let mut p = best.clone();
             let centres: Vec<f32> = p.layers[li].tables[0].chunks(3).map(|b| b[0]).collect();
@@ -261,7 +260,7 @@ fn periods(m: &gmgen::render::WaveMeta, p: &Params, l: usize) -> usize {
 
 /// Moves each sustain `additive` table entry by the loop's harmonic level error (3 passes, kept if better).
 pub fn refine_harmonics(orig: &[f32], i: usize, start: &Params, start_score: f32) -> (Params, f32) {
-    let m = gmgen::bank::meta(i).unwrap();
+    let m = crate::meta(i).unwrap();
     let Some((s, l)) = loop_of(&m) else { return (start.clone(), start_score) };
     let Some(li) = start.layers.iter().position(|x| FAMILIES[x.family].name == "additive" && x.region == Region::Sustain) else {
         return (start.clone(), start_score);
@@ -269,7 +268,7 @@ pub fn refine_harmonics(orig: &[f32], i: usize, start: &Params, start_score: f32
     let om = loop_mag(&orig[s..s + l]);
     let (mut best, mut best_score) = (start.clone(), start_score);
     for _ in 0..3 {
-        let synth = gmgen::render_wave(i, &best);
+        let synth = crate::render_wave(i, &best);
         let gm = loop_mag(&synth[s..s + l]);
         let per = periods(&m, &best, l);
         let mut p = best.clone();
@@ -292,11 +291,11 @@ pub fn refine_harmonics(orig: &[f32], i: usize, start: &Params, start_score: f32
 
 /// Analytic harmonic correction (D4b) on top of `start` (its own correction ignored); kept only if better.
 pub fn correct(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
-    let m = gmgen::bank::meta(i).unwrap();
+    let m = crate::meta(i).unwrap();
     let start_score = score_of(orig, i, start);
     let mut base = start.clone();
     base.correction.clear();
-    let synth = gmgen::render_wave(i, &base);
+    let synth = crate::render_wave(i, &base);
     let f0 = gmgen::render::f0(&m, &base);
     let rate = m.rate as f32;
     // Harmonic levels of original and model.
@@ -349,7 +348,7 @@ pub fn correct(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
 /// harmonic correction's tail. Kept only if better than `start`.
 pub fn correct_tf(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     use gmgen::tf::{measure, rows_for, BANDS};
-    let m = gmgen::bank::meta(i).unwrap();
+    let m = crate::meta(i).unwrap();
     let rate = m.rate as f32;
     let start_score = score_of(orig, i, start);
     let mut base = start.clone();
@@ -369,7 +368,7 @@ pub fn correct_tf(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     p.tf = vec![0.0; rows * BANDS];
     let mut best = (start.clone(), start_score);
     for _ in 0..4 {
-        let mg = measure(&gmgen::render_wave(i, &p)[..attack], rate, rows);
+        let mg = measure(&crate::render_wave(i, &p)[..attack], rate, rows);
         for (k, t) in p.tf.iter_mut().enumerate() {
             if mo[k] < top - 60.0 && mg[k] < top - 60.0 {
                 continue;
@@ -393,7 +392,7 @@ pub fn correct_tf(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
 /// Kept only if better than `start`.
 pub fn correct_env(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     use gmgen::tf::{measure_env, ENV_TIMES, BANDS};
-    let m = gmgen::bank::meta(i).unwrap();
+    let m = crate::meta(i).unwrap();
     let rate = m.rate as f32;
     let start_score = score_of(orig, i, start);
     let mut base = start.clone();
@@ -429,7 +428,7 @@ pub fn correct_env(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     p.env = vec![0.0; n];
     let mut best = (start.clone(), start_score);
     for _ in 0..6 {
-        let mg = measure(&gmgen::render_wave(i, &p));
+        let mg = measure(&crate::render_wave(i, &p));
         for (k, e) in p.env.iter_mut().enumerate() {
             if mo[k] < top - 60.0 && mg[k] < top - 60.0 {
                 continue;
@@ -450,7 +449,7 @@ pub fn correct_env(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     if past_end && best.0.env.len() == n {
         let mut q = best.0.clone();
         for _ in 0..6 {
-            let mg = measure(&gmgen::render_wave(i, &q));
+            let mg = measure(&crate::render_wave(i, &q));
             let e = &mut q.env[n - 1];
             *e = ((*e + (mo[n - 1] - mg[n - 1])).clamp(-48.0, 24.0) * 10.0).round() / 10.0;
         }
@@ -469,7 +468,7 @@ pub fn correct_all(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     let (mut p, mut s) = correct_env(orig, i, &p);
     // Gap noise on the corrected model (the tables move the upper harmonics), then the attack tables again;
     // kept unless the score drops by more than 0.005 (the score barely sees the gap floor).
-    let meta = gmgen::bank::meta(i).expect("wave meta");
+    let meta = crate::meta(i).expect("wave meta");
     let mut q = p.clone();
     if crate::analyze::gap_noise(i, orig, &meta, &mut q) {
         let (q, _) = correct_tf(orig, i, &q);
@@ -490,7 +489,7 @@ pub fn correct_all(orig: &[f32], i: usize, start: &Params) -> (Params, f32) {
     }
     // Re-pick the phase seed on the corrected sound (tables change the band levels); keep it unless the score drops.
     let before = p.clone();
-    crate::analyze::pick_phase_seed(i, orig, &gmgen::bank::meta(i).expect("wave meta"), &mut p);
+    crate::analyze::pick_phase_seed(i, orig, &crate::meta(i).expect("wave meta"), &mut p);
     let s2 = score_of(orig, i, &p);
     if s2 + 0.002 >= s { (p, s2) } else { (before, s) }
 }
@@ -519,7 +518,7 @@ pub fn refine(orig: &[f32], i: usize, start: &Params, rounds: usize, iters: usiz
 /// The whole per-wave pipeline from the original (skill "Loop"): analyze → fit → correct_all → refine.
 /// Returns the best seen with its score.
 pub fn pipeline(orig: &[f32], i: usize, iters: usize, rounds: usize, seed: u64) -> (Params, f32) {
-    let m = gmgen::bank::meta(i).expect("wave meta");
+    let m = crate::meta(i).expect("wave meta");
     let mut alts = Vec::new();
     let p = crate::analyze::analyze_alts(i, orig, &m, &mut alts).params;
     let main = pipeline_from(orig, i, p, iters, rounds, seed);
@@ -570,7 +569,7 @@ mod tests {
         l.tables[0] = vec![0.0, -3.0, -6.0, -9.0, -12.0, -15.0, -18.0, -21.0];
         let mut target = Params::default();
         target.layers.push(l.clone());
-        let orig = gmgen::render_wave(i, &target);
+        let orig = crate::render_wave(i, &target);
         l.tables[0] = vec![0.0, -12.0, 0.0, -20.0, -6.0, -15.0, -30.0, -21.0];
         let mut wrong = Params::default();
         wrong.layers.push(l);

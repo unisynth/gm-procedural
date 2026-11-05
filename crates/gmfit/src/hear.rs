@@ -19,6 +19,8 @@ pub const AUDIBLE: f32 = 0.05;
 pub const MOD_AUDIBLE: f32 = 0.02;
 /// Roughness difference (dB) below which a copy is as rough as the original (pilots ≤ 0.5).
 pub const ROUGH_AUDIBLE: f32 = 1.0;
+/// Ring difference (octaves) below which droplets/rings ring like the original's (cymbals 0.1–0.3).
+pub const RING_AUDIBLE: f32 = 0.3;
 /// Frame-aligned span at the start (s); level distributions after it.
 const ATTACK_S: f32 = 0.15;
 /// Tolerance factor on the original's fluctuation for the distribution part (aligned part: 1.4).
@@ -128,6 +130,51 @@ pub struct Heard {
     pub flutter_at: f32,
     /// `roughness` copy − original (dB): strikes blurred into a buzz read negative.
     pub rough: f32,
+    /// `ring_diff` (octaves) of the loops, set by `listen` (0 from `hear` alone).
+    pub ring: f32,
+}
+
+/// Ring difference (octaves) of two loops: per third-octave band within 30 dB of the original's loudest,
+/// |log2(copy ring index / original ring index)| (`shaker::bands`; ≤ 2), weighted by the original's band power, signed
+/// by the weighted direction (+ rings longer). Water is a hissing bed under droplets ringing at Q ≈ 35; a copy
+/// ringing evenly everywhere, or with droplets ringing on, sounds "not watery" — the frame score and the ear model's
+/// spectra cannot see it.
+pub fn ring_diff(orig: &[f32], copy: &[f32], rate: f32) -> f32 {
+    let (a, b) = (crate::shaker::bands(orig, rate), crate::shaker::bands(copy, rate));
+    let top = a.iter().map(|r| r.power).fold(0.0, f32::max);
+    let (mut w, mut sum, mut dir) = (0.0f32, 0.0f32, 0.0f32);
+    for (x, y) in a.iter().zip(&b) {
+        if x.power < top * 1e-3 {
+            continue;
+        }
+        let d = (y.index.max(0.2) / x.index.max(0.2)).log2().clamp(-2.0, 2.0);
+        if std::env::var_os("GMFIT_RING_TRACE").is_some() {
+            eprintln!("{:6.0} Hz  orig {:4.2} copy {:4.2}  {:+5.2} oct  {:6.1} dB", x.hz, x.index, y.index, d, 10.0 * x.power.log10());
+        }
+        w += x.power;
+        sum += x.power * d.abs();
+        dir += x.power * d;
+    }
+    if w <= 0.0 {
+        0.0
+    } else {
+        sum / w * if dir >= 0.0 { 1.0 } else { -1.0 }
+    }
+}
+
+/// `hear` on the played sounds at bank `speed`, plus the ring difference of the loops at the stored rate — for
+/// unpitched originals (`pitched` false) with a loop ≥ 50 ms; 0 otherwise: single hits are the envelope's business,
+/// and a periodic tone's envelope never decorrelates (its index reads harmonic beating — approved piano 293: 1.5).
+pub fn listen(orig: &[f32], synth: &[f32], m: &gmgen::render::WaveMeta, speed: f32, pitched: bool) -> Heard {
+    let (a, b) = (crate::audio::played(orig, m, 1.0), crate::audio::played(synth, m, 1.0));
+    let rate = m.rate as f32;
+    let mut h = hear(&at_speed(&a, speed), &at_speed(&b, speed), rate);
+    if let Some((s, l)) = crate::audio::loop_of(m) {
+        if !pitched && l as f32 >= 0.05 * rate && orig.len() >= s + l && synth.len() >= s + l {
+            h.ring = ring_diff(&orig[s..s + l], &synth[s..s + l], rate);
+        }
+    }
+    h
 }
 
 /// Fine-time roughness (dB): in 4 bands (0.3–0.8, 0.8–2, 2–4.5, 4.5–10 kHz), the RMS deviation of the 2 ms envelope
@@ -330,6 +377,7 @@ pub fn hear(orig: &[f32], copy: &[f32], rate: f32) -> Heard {
         swell,
         flutter_at: a.centres[jf] * if db[jf] >= da[jf] { 1.0 } else { -1.0 },
         rough: roughness(copy, rate) - roughness(orig, rate),
+        ring: 0.0,
     }
 }
 
@@ -343,7 +391,7 @@ impl Heard {
             "added_at": r(&self.added_at), "missing_at": r(&self.missing_at),
             "flutter": crate::score::r4(self.flutter), "moddiff": crate::score::r4(self.moddiff), "swell": crate::score::r4(self.swell),
             "flutter_band_hz": self.flutter_at.abs().round(), "flutter_band_more": self.flutter_at >= 0.0,
-            "rough": crate::score::r4(self.rough),
+            "rough": crate::score::r4(self.rough), "ring": crate::score::r4(self.ring),
             "verdict": self.verdict(),
         })
     }
@@ -370,6 +418,13 @@ impl Heard {
                 format!("smoother by {:.1} dB: strikes or grains blurred together (a buzz, \"like a motor\")", -self.rough)
             } else {
                 format!("rougher by {:.1} dB: grainier or clickier than the original", self.rough)
+            });
+        }
+        if self.ring.abs() > RING_AUDIBLE {
+            v.push(if self.ring < 0.0 {
+                format!("rings {:.1} octaves too briefly: droplets/rings heard as hiss (\"not watery\")", -self.ring)
+            } else {
+                format!("rings {:.1} octaves too long: tones where the original hisses or patters", self.ring)
             });
         }
         if self.swell.abs() > 0.03 {

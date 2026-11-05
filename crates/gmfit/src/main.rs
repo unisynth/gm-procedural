@@ -1,7 +1,10 @@
 //! `gmfit <command>`: fit the procedural GM bank against the original `gm.dls` (`GM_DLS`).
 //!
 //! gmfit extract [-o assets/gm/structure.json]   write the bank structure (no audio)
+//! gmfit bank [--orig] [-o build/gm/gen.dls]   write the generated bank (committed parameters) as a DLS file;
+//!                                               --orig re-writes GM_DLS through the same writer
 //! gmfit placeholder                             write a placeholder parameter file for every wave without one
+//! gmfit dump <dir> [--secs 2]                 every wave's orig/gen wav (played) + index.json, for the A/B pages
 //! gmfit render <wave> [-p file.json]            A/B wav + sheet.png + report.json in build/gm/NNN, JSON on stdout
 //! gmfit sweep <wave> <param> <v1,v2,..>         one scored, rendered variant per value (files unchanged)
 //! gmfit analyze <wave> [--force] [-o f]         initial parameters from the original + priors (placeholders only,
@@ -10,6 +13,11 @@
 //! gmfit correct <wave>                          analytic harmonic + time × band (tf) + fine envelope (env) correction, kept if better
 //! gmfit refine <wave> [--rounds 3] [--iters 80] [--seed 1]   alternate fit ↔ correct, kept if better
 //! gmfit report [--check] [--baseline]           score every wave → build/gm/report.md; --check vs scores.json
+//!
+//! gmfit plus-map                               gmplus target per wave → assets/gm-plus/map.json (needs GMPLUS_SF2)
+//!
+//! Every command takes `--set gm|plus` (default gm): `plus` reads/writes assets/gm-plus and build/gm-plus and fits
+//! the gmplus soundfont targets (`GMPLUS_SF2`) instead of the gm.dls waves (change add-gmplus-bank).
 //!
 //! Exit: 0 ok, 2 flags raised (render) / regression (report --check), 1 error.
 use gmfit::{score, sheet};
@@ -30,17 +38,41 @@ fn wave_arg(args: &[String]) -> usize {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(k) = args.iter().position(|a| a == "--set") {
+        let name = args.get(k + 1).cloned().unwrap_or_else(|| die("--set: gm | plus"));
+        args.drain(k..k + 2);
+        gmfit::select_set(gmfit::Set::from_name(&name).unwrap_or_else(|e| die(e))).unwrap_or_else(|e| die(e));
+    }
     let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     let flag = |name: &str| args.iter().any(|a| a == name);
     match args.first().map(String::as_str) {
         Some("extract") => {
             let bytes = gmfit::original_bank().unwrap_or_else(|e| die(e));
             let d = dls::Dls::parse(&bytes).unwrap_or_else(|e| die(format!("not a DLS bank: {e:?}")));
-            let bank = dls::write::Bank::read(&d);
+            let bank = match gmfit::set() {
+                // plus: lengths, loops, fine tune and gain from the gmplus targets (add-gmplus-bank D3)
+                gmfit::Set::Plus => gmfit::plus::Targets::load().and_then(|t| t.structure(&d)).unwrap_or_else(|e| die(e)),
+                gmfit::Set::Gm => dls::write::Bank::read(&d),
+            };
             let out = opt("-o").map(Into::into).unwrap_or_else(|| gmfit::assets_dir().join("structure.json"));
             std::fs::write(&out, gmgen::structure::to_json(&bank)).unwrap_or_else(|e| die(e));
             println!("{}: {} instruments, {} waves", out.display(), bank.instruments.len(), bank.waves.len());
+        }
+        Some("bank") => {
+            // --orig: the original bank re-written by the same DLS writer (same layout as the generated one)
+            let out = opt("-o").unwrap_or_else(|| gmfit::build_dir().join("gen.dls").display().to_string());
+            let bytes = if gmfit::set() == gmfit::Set::Plus {
+                gmgen::plus::build(None)
+            } else if flag("--orig") {
+                let b = gmfit::original_bank().unwrap_or_else(|e| die(e));
+                let d = dls::Dls::parse(&b).unwrap_or_else(|e| die(format!("not a DLS bank: {e:?}")));
+                dls::write::write(&dls::write::Bank::read(&d))
+            } else {
+                gmgen::bank::build(None)
+            };
+            std::fs::write(&out, &bytes).unwrap_or_else(|e| die(e));
+            println!("{out}: {} bytes", bytes.len());
         }
         Some("placeholder") => {
             let dir = gmfit::assets_dir().join("waves");
@@ -51,7 +83,7 @@ fn main() {
                 if path.exists() {
                     continue;
                 }
-                let m = gmgen::bank::meta(i).unwrap_or_else(|| die(format!("wave {i}: no meta")));
+                let m = gmfit::meta(i).unwrap_or_else(|| die(format!("wave {i}: no meta")));
                 std::fs::write(&path, gmgen::params_json::to_json(&gmfit::placeholder(i as u32, &m))).unwrap_or_else(|e| die(e));
                 made += 1;
             }
@@ -67,7 +99,7 @@ fn main() {
                     .unwrap_or_else(|e| die(format!("{f}: {e}"))),
                 None => gmfit::load_wave(i).unwrap_or_else(|e| die(e)),
             };
-            let m = gmgen::bank::meta(i).unwrap();
+            let m = gmfit::meta(i).unwrap();
             let o = orig.wave(i);
             let (s, plain, synth) = gmfit::evaluate(&o, i, &wf.params);
             let dir = gmfit::out_dir(i);
@@ -75,7 +107,17 @@ fn main() {
             gmfit::audio::write_wav(&dir.join("orig.wav"), &pa, m.rate).unwrap_or_else(|e| die(e));
             gmfit::audio::write_wav(&dir.join("gen.wav"), &pb, m.rate).unwrap_or_else(|e| die(e));
             let (sa, sb) = (gmfit::audio::played(&o, &m, score::PLAYED_SECS), gmfit::audio::played(&synth, &m, score::PLAYED_SECS));
-            sheet::pair(&dir.join("sheet.png"), &sa, &sb, m.rate as f32).unwrap_or_else(|e| die(e));
+            match orig.targets() {
+                // plus: target / generated / the gm.dls wave (resampled to the plus rate) as a third row
+                Some(_) => {
+                    let gm_meta = gmgen::bank::meta(i).unwrap();
+                    let g = gmfit::audio::played(&orig.gm_wave(i), &gm_meta, score::PLAYED_SECS);
+                    let step = gm_meta.rate as f64 / m.rate as f64;
+                    let g = gmfit::dsp::resample(&g, 0.0, step, ((g.len() as f64 - 1.0) / step) as usize);
+                    sheet::rows(&dir.join("sheet.png"), &sa, &[sb.clone(), g], m.rate as f32).unwrap_or_else(|e| die(e));
+                }
+                None => sheet::pair(&dir.join("sheet.png"), &sa, &sb, m.rate as f32).unwrap_or_else(|e| die(e)),
+            }
             let (names, cat) = gmfit::users(i);
             let layers: Vec<Value> = wf
                 .params
@@ -91,6 +133,9 @@ fn main() {
             rep.as_object_mut().unwrap().extend(s.json().as_object().unwrap().clone());
             if let Some(p) = plain {
                 rep["score_without_correction"] = json!(score::r4(p.score));
+            }
+            if let Some(t) = orig.targets() {
+                rep["gmplus"] = t.wave(&orig.dls(), i).map(|t| t.row).unwrap_or_else(|e| json!({"error": e}));
             }
             let text = serde_json::to_string_pretty(&rep).unwrap();
             std::fs::write(dir.join("report.json"), &text).unwrap_or_else(|e| die(e));
@@ -108,12 +153,12 @@ fn main() {
                     .unwrap_or_else(|e| die(format!("{f}: {e}"))),
                 None => gmfit::load_wave(i).unwrap_or_else(|e| die(e)),
             };
-            let m = gmgen::bank::meta(i).unwrap();
+            let m = gmfit::meta(i).unwrap();
             let o = orig.wave(i);
-            let synth = gmgen::render_wave(i, &wf.params);
+            let synth = gmfit::render_wave(i, &wf.params);
             let (key, speed, by) = gmfit::play_speed(i);
-            let (pa, pb) = (gmfit::audio::played(&o, &m, 1.0), gmfit::audio::played(&synth, &m, 1.0));
-            let h = gmfit::hear::hear(&gmfit::hear::at_speed(&pa, speed), &gmfit::hear::at_speed(&pb, speed), m.rate as f32);
+            let pitched = score::score(&o, &synth, &m).f0_orig.is_some();
+            let h = gmfit::hear::listen(&o, &synth, &m, speed, pitched);
             let mut rep = json!({"wave": i, "play": {"key": key, "speed": score::r4(speed), "by": by}});
             rep.as_object_mut().unwrap().extend(h.json().as_object().unwrap().clone());
             println!("{}", serde_json::to_string_pretty(&rep).unwrap());
@@ -124,7 +169,7 @@ fn main() {
             let values: Vec<f32> = values.split(',').map(|v| v.parse().unwrap_or_else(|_| die(format!("bad value {v}")))).collect();
             let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
             let wf = gmfit::load_wave(i).unwrap_or_else(|e| die(e));
-            let m = gmgen::bank::meta(i).unwrap();
+            let m = gmfit::meta(i).unwrap();
             let o = orig.wave(i);
             let mut rows = Vec::new();
             let mut sigs = Vec::new();
@@ -145,7 +190,7 @@ fn main() {
         Some("analyze") => {
             let i = wave_arg(&args);
             let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
-            let m = gmgen::bank::meta(i).unwrap();
+            let m = gmfit::meta(i).unwrap();
             let o = orig.wave(i);
             let wf = gmfit::analyze::analyze(i, &o, &m);
             let s = gmfit::evaluate(&o, i, &wf.params).0;
@@ -250,8 +295,51 @@ fn main() {
                 }
             });
         }
+        Some("dump") => {
+            // dump <dir> [--secs s]: every wave of the set as <dir>/NNN-orig.wav + NNN-gen.wav (played for s seconds,
+            // default 2) and <dir>/index.json (score, flags, placeholder, users) — the per-sound comparison page.
+            let dir = std::path::PathBuf::from(args.get(1).filter(|a| !a.starts_with("--")).cloned().unwrap_or_else(|| die("dump <dir>")));
+            let secs: f32 = opt("--secs").map_or(2.0, |v| v.parse().unwrap_or_else(|_| die("--secs: number")));
+            std::fs::create_dir_all(&dir).unwrap_or_else(|e| die(e));
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let n = gmgen::wave_count();
+            let next = std::sync::atomic::AtomicUsize::new(0);
+            let rows = std::sync::Mutex::new(vec![Value::Null; n]);
+            std::thread::scope(|sc| {
+                for _ in 0..std::thread::available_parallelism().map_or(4, |n| n.get()) {
+                    sc.spawn(|| loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        if i >= n {
+                            break;
+                        }
+                        let wf = gmfit::load_wave(i).unwrap_or_else(|e| die(e));
+                        let (o, m) = (orig.wave(i), gmfit::meta(i).unwrap());
+                        let (sc, _, synth) = gmfit::evaluate(&o, i, &wf.params);
+                        gmfit::audio::write_wav(&dir.join(format!("{i:03}-orig.wav")), &gmfit::audio::played(&o, &m, secs), m.rate).unwrap_or_else(|e| die(e));
+                        gmfit::audio::write_wav(&dir.join(format!("{i:03}-gen.wav")), &gmfit::audio::played(&synth, &m, secs), m.rate).unwrap_or_else(|e| die(e));
+                        let (names, cat) = gmfit::users(i);
+                        let mut row = json!({"wave": i, "category": cat, "instruments": names, "rate": m.rate, "placeholder": wf.placeholder,
+                            "score": score::r4(sc.score), "tier": gmfit::tier(&sc), "flags": sc.json()["flags"].clone()});
+                        if let Some(t) = orig.targets() {
+                            row["source"] = t.wave(&orig.dls(), i).map(|t| t.row["sample"].clone()).unwrap_or(Value::Null);
+                        }
+                        rows.lock().unwrap()[i] = row;
+                    });
+                }
+            });
+            let rows = rows.into_inner().unwrap();
+            std::fs::write(dir.join("index.json"), serde_json::to_string(&rows).unwrap()).unwrap_or_else(|e| die(e));
+            println!("{n} waves → {}", dir.display());
+        }
+        Some("plus-map") => {
+            gmfit::select_set(gmfit::Set::Plus).unwrap_or_else(|e| die(e));
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let t = orig.targets().expect("plus set");
+            let (path, summary) = t.write_map(&orig.dls()).unwrap_or_else(|e| die(e));
+            println!("{}", json!({"map": path.display().to_string(), "summary": summary}));
+        }
         Some("report") => report(flag("--check"), flag("--baseline")),
-        _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | refine <w> | render <w> [-p f] | hear <w> [-p f] | sweep <w> <param> <values> | bulk (--cat c | <w>...) [--iters n] [--rounds n] [--jobs n] | report [--check] [--baseline]"),
+        _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | refine <w> | render <w> [-p f] | dump <dir> [--secs s] | hear <w> [-p f] | sweep <w> <param> <values> | bulk (--cat c | <w>...) [--iters n] [--rounds n] [--jobs n] | report [--check] [--baseline]"),
     }
 }
 
@@ -273,7 +361,7 @@ fn report(check: bool, baseline: bool) {
                             let r = gmfit::load_wave(i).map(|wf| {
                                 let o = orig.wave(i);
                                 let (s, _, synth) = gmfit::evaluate(&o, i, &wf.params);
-                                let m = gmgen::bank::meta(i).unwrap();
+                                let m = gmfit::meta(i).unwrap();
                                 let (pa, pb) = (gmfit::audio::played(&o, &m, 0.25), gmfit::audio::played(&synth, &m, 0.25));
                                 (s, wf.placeholder, wf.params.numbers(), pa, pb)
                             });
@@ -333,13 +421,14 @@ fn report(check: bool, baseline: bool) {
         md.push_str(line);
         md.push('\n');
     }
-    let path = gmfit::repo_root().join("build/gm/report.md");
+    let path = gmfit::build_dir().join("report.md");
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     std::fs::write(&path, md).unwrap_or_else(|e| die(e));
     let mut cells: Vec<(usize, f32, Vec<f32>, Vec<f32>)> =
         results.iter().filter_map(|(i, r)| r.as_ref().ok().map(|x| (*i, x.0.score, x.3.clone(), x.4.clone()))).collect();
     cells.sort_by(|a, b| a.1.total_cmp(&b.1));
-    sheet::bank(&gmfit::repo_root().join("build/gm/bank.png"), &cells, 22050.0).unwrap_or_else(|e| die(e));
+    let rate = gmfit::meta(0).map_or(22050.0, |m| m.rate as f32);
+    sheet::bank(&gmfit::build_dir().join("bank.png"), &cells, rate).unwrap_or_else(|e| die(e));
     let mean = results.iter().filter_map(|(_, r)| r.as_ref().ok().map(|x| x.0.score)).sum::<f32>() / n as f32;
     println!("{}", json!({"report": path.display().to_string(), "tiers": tiers, "placeholders": placeholders, "mean": score::r4(mean), "regressions": regressions}));
     if baseline {
