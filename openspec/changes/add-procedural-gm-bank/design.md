@@ -599,6 +599,10 @@ copy rings evenly (0.7), q10/q20 and a frame-fitted ring model ring 2–6× too 
 - Bulk over the 15 waves beyond 0.3 + bubble: 437 −0.84 → 0.39, 63 −0.86 → 0.34, 283 −1.37 → 0.09, 489 −0.09 → 0.46,
   195 0.05 → 0.26, 408 0.28 → 0.41, 109, 62 0.26 → 0.30, 490, 438. 404's droplets + hiss (score 0.44, missing 0.09 →
   0.01, ring −0.45 → +0.33 oct) ranks 0.41 < 0.44: left to listening (`build/gm/ab3`).
+- 404 committed by listening decision: the droplet layer with Q × 0.7, refit — score 0.495 → 0.445, ring −0.45 →
+  −0.21 oct, roughness +0.94 → −0.81 dB, added + missing 0.094 → 0.073; every hearing measure within tolerance
+  (the old copy failed ring = the "not watery" complaint). Rank 0.430 vs 0.435: a tie the frame score decides
+  against the listener, so overridden; remaining verdict: 6 % extra hiss near 0.6 and 2.5 kHz.
 
 ### D5. Determinism
 `gmgen` has its own `sin`/`exp`/`pow2` polynomial approximations and an xorshift RNG. It does not use `libm`
