@@ -127,6 +127,7 @@ pub mod fit;
 pub mod fm;
 pub mod formant;
 pub mod hear;
+pub mod ks;
 pub mod modal;
 pub mod plus;
 pub mod plan;

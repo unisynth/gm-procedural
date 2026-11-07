@@ -162,6 +162,19 @@ static FORMANT: [Scalar; 16] = with_env![
         s("syl_glide", -2400.0, 2400.0, 0.0), // cents each syllable falls over `syl_d`
 ];
 
+static KS: [Scalar; 15] = with_env![
+        s("level_db", -80.0, 24.0, 0.0),
+        s("f0", 0.0, 4000.0, 0.0),       // string pitch (0: the wave's fundamental)
+        s("cents", -1200.0, 1200.0, 0.0),
+        s("pick", 0.0, 0.5, 0.0),        // pick position (fraction of the string; 0: no comb)
+        s("damp", 0.0, 1.0, 0.3),        // loop one-zero damping (upper harmonics die faster)
+        s("t60", 0.01, 30.0, 2.0),       // fundamental's 60 dB decay (s)
+        s("stretch", 0.0, 0.95, 0.0),    // dispersion all-pass (stiff string: sharp upper partials)
+        s("dyn", 50.0, 20000.0, 8000.0), // excitation low-pass (pluck dynamics)
+        s("exc", 0.1, 8.0, 1.0),         // excitation length (periods)
+        s("buzz", 0.0, 1.0, 0.0),        // asymmetric bridge contact (sitar buzz)
+];
+
 pub const FAMILIES: &[Family] = &[
     // Harmonic table `harm` (dB per harmonic 1..K), optional `phase` (cycles, harmonics 1..P).
     Family {
@@ -213,6 +226,8 @@ pub const FAMILIES: &[Family] = &[
         tables: &[Table { name: "formants", width: 3, max_rows: 5 }, Table { name: "syl", width: 3, max_rows: 16 }],
         periodic: true,
     },
+    // Karplus-Strong plucked string; `body`: [Hz, Q, dB] commuted body resonances (≤ 4). Not periodic.
+    Family { name: "ks", scalars: &KS, tables: &[Table { name: "body", width: 3, max_rows: 4 }], periodic: false },
 ];
 
 pub fn family(name: &str) -> Option<usize> {
