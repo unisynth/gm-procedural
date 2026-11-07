@@ -198,7 +198,11 @@ explaining the limit.
   342, 251; strings 189, 485, 303; ensemble 283, 392, 389, 391, 390, 311, 85. `ks` attacks in 22 (13 strings —
   pizzicato plausible, bowed needs listening). Report A 66, B 117, C 312, placeholders 123, mean 0.516.
 - [ ] 8.5 Synth lead (25), pad (25) and synth FX (17)
+  First pass (categories hold 37/9/9): 55/55 written, mean 0.57 / 0.69 / 0.69. Tier C left (< 0.5): lead 386, 385,
+  170, 327, 326, 82, 328, 336, 87, 210, 86, 81, 5 (the `subtractive` family, 7.4, targets these); pad 171; fx 378.
 - [ ] 8.6 Piano (36) and chromatic percussion (19)
+  First pass (46/18): 64/64 written, mean 0.69 / 0.58, `ks` in 20. Tier C left (< 0.5): piano 206, 12, 115, 117,
+  289, 197; chromatic 493, 80, 179, 178, 478, 243. Report A 83, B 154, C 258, placeholders 7, mean 0.653.
 - [ ] 8.7 Ethnic (31), percussive (9), SFX (10) and any remaining waves. Verify that no placeholder parameters remain
   (`gmfit report` shows 0 waves with the placeholder flag).
   Ethnic first pass (`bulk --cat ethnic`: 20 waves in the category): 20/20 written, `ks` attacks in 11; tier C left:
