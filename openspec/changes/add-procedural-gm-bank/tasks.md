@@ -183,6 +183,10 @@ explaining the limit.
   (Bird, Applause…). Kit percussion on keys 54 and 67–84 fell back to `noise`: it needs `modal` (7.2) and `shaker`
   (7.5). Re-run after those.
 - [ ] 8.2 Bass (30) and guitar (48)
+  First pass (`bulk --cat bass`, `--cat guitar`, with `ks`): bass 26/29 written (0, 1, 240 kept), guitar 57/58
+  (2 kept); `ks` attacks win 23 (9 bass, 14 guitar). Report: A 6 → 10, B 25 → 56, placeholders 388 → 306, mean
+  0.169 → 0.263, no regressions. Tier C left (< 0.5): bass 173, 286, 375, 373, 418, 411; guitar 97, 273, 279, 204,
+  401, 276, 124, 203, 127, 96, 211 — need listening and notes.
 - [ ] 8.3 Organ (28), pipe (27) and reed (46)
 - [ ] 8.4 Brass (37), strings (32) and ensemble (15)
 - [ ] 8.5 Synth lead (25), pad (25) and synth FX (17)
