@@ -205,6 +205,8 @@ explaining the limit.
   289, 197; chromatic 493, 80, 179, 178, 478, 243. Report A 83, B 154, C 258, placeholders 7, mean 0.653.
 - [ ] 8.7 Ethnic (31), percussive (9), SFX (10) and any remaining waves. Verify that no placeholder parameters remain
   (`gmfit report` shows 0 waves with the placeholder flag).
+  Last 7 placeholders fitted (443 0.64, 397 0.52, 436 0.13, 284 0.12, 475 0.58, 301 0.84, 285 0.21): `gmfit
+  report` shows 0 placeholders; A 83, B 155, C 257, mean 0.659, no regressions. Tier-C notes still to write.
   Ethnic first pass (`bulk --cat ethnic`: 20 waves in the category): 20/20 written, `ks` attacks in 11; tier C left:
   Banjo 45 0.24, 46 0.48, Shamisen 355 0.43, 356 0.22. Report A 11, B 62, C 422, placeholders 286, mean 0.286.
 
