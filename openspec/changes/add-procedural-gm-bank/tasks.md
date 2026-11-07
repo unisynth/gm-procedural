@@ -190,6 +190,9 @@ explaining the limit.
   0.169 → 0.263, no regressions. Tier C left (< 0.5): bass 173, 286, 375, 373, 418, 411; guitar 97, 273, 279, 204,
   401, 276, 124, 203, 127, 96, 211 — need listening and notes.
 - [ ] 8.3 Organ (28), pipe (27) and reed (46)
+  First pass (categories hold 32/22/43 waves): 96/97 written, mean 0.73 / 0.76 / 0.82. `ks` attacks won on 6 organ,
+  6 pipe, 8 reed waves (a pluck as chiff/reed onset — listen). Tier C left (< 0.5): organ 121, 111, 110, 157, 158,
+  112; pipe 51, 353, 52; reed 134, 67. Report A 54, B 90, C 351, placeholders 191, mean 0.429, no regressions.
 - [ ] 8.4 Brass (37), strings (32) and ensemble (15)
 - [ ] 8.5 Synth lead (25), pad (25) and synth FX (17)
 - [ ] 8.6 Piano (36) and chromatic percussion (19)
