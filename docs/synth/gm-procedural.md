@@ -239,6 +239,34 @@ octaves pulled to the median), pitch fall tracked on harmonic 1–2, formants fr
 (LPC locks onto sparse harmonics), breath envelope fitted to the floor between syllables; formant gains and breath
 re-levelled against the original in 3 render passes.
 
+### `ks` (attack/whole; Karplus-Strong)
+
+Extended Karplus-Strong (Jaffe–Smith) plucked string, `gmgen/src/fam/ks.rs`. Not periodic: whole waves and attack
+layers; a looped wave hands over to an exact sustain layer at the loop start.
+
+| Parameter | Range | Default | Meaning |
+|---|---|---|---|
+| `level_db` | −80…24 | 0 | layer level |
+| `f0`, `cents` | 0…4000 Hz, ±1200 | 0 (wave pitch), 0 | string pitch |
+| `pick` | 0…0.5 | 0 | pick position (fraction of the string): comb 1 − z^(−pick·N); ½ removes even harmonics |
+| `damp` | 0…1 | 0.3 | loop one-zero (1 − s) + s·z⁻¹, s = damp/2: upper harmonics die faster |
+| `t60` | 0.01…30 s | 2 | fundamental's 60 dB decay (sets the loop gain) |
+| `stretch` | 0…0.95 | 0 | dispersion all-pass (coefficient −stretch): sharp upper partials (stiff strings) |
+| `dyn` | 50…20000 Hz | 8000 | one-pole low-pass on the excitation (pluck dynamics) |
+| `exc` | 0.1…8 | 1 | excitation burst length in periods |
+| `buzz` | 0…1 | 0 | asymmetric bridge contact (negative half attenuated: sitar buzz) |
+
+Table `body`: `[Hz, Q, dB]` (≤ 4) band-passes the excitation runs through (commuted body), plus the direct path.
+The fractional tuning all-pass is solved by bisection against the exact phase delays of the damping and dispersion
+filters at f0 (the dispersion all-pass at coefficient 0 is z⁻¹). Tests: pitch within 2 cents (110/196/440 Hz),
+decay within 10 %, pick ½ removes the even harmonics, body and buzz stable.
+
+Analysis (`gmfit/src/ks.rs`): `t60` from the decay slope of the 0.8–1.25·f0 band; damping × dynamics searched
+jointly (a plucked bass only darkens enough with both), then pick, damping, dynamics, dispersion and burst length one
+at a time (2 passes) on the fit objective, the level recalibrated each step. Looped waves: `ks` attack levelled on its
+head (3 ms … ⅓ of the attack), sustain layers delayed to fade in over its last 10 ms and re-levelled on the loop (the
+delayed envelope freezes elsewhere on its curve). Fit opens `level_db a d s t60 damp dyn stretch`.
+
 ## Commands
 
 ```bash
