@@ -133,7 +133,7 @@ skip when `GM_DLS` is unset.
 
 ## 7. Remaining model families
 
-- [ ] 7.1 Add the `ks` family: extended Karplus-Strong with pick-position comb, dynamics low-pass, all-pass tuning,
+- [x] 7.1 Add the `ks` family: extended Karplus-Strong with pick-position comb, dynamics low-pass, all-pass tuning,
   dispersion, commuted body resonances and optional bridge buzz.
   - Tests: pitch accuracy within 2 cents, decay time within 10 %, and a pick position at ½ removes the even
     harmonics.
@@ -142,6 +142,8 @@ skip when `GM_DLS` is unset.
   candidate vs placeholder: Fingered Bass 241 0.52 vs 0.02 (beats the additive path, 0.49), Sitar 368 0.28 vs 0.004
   (beats 0.27), Clean Gt. 95 0.15 vs 0.009, Picked Bass 287 −0.15 vs 0.03 (too bright/loud on a dark 286 ms attack;
   the additive path wins there). Bulk 8.2 decides per wave.
+  Bank after bulk (8.2, 8.7): `ks` attacks in 34 waves; Fingered Bass 241 0.78, Synth Bass 412 0.74, Slap 374 0.71,
+  guitar 215 0.86, Sitar 368 0.57 / 370 0.83 — all far above their placeholders (≤ 0.04).
 - [x] 7.2 Add the `modal` family (modes × ratio/amplitude/decay, strike noise), with tests for mode frequencies and
   decays. Check it on 3 mallet and bell waves. Verify all 3 score above their placeholder score.
   Done as design D4l: absolute-Hz modes, glide, hit train / measured `hits` table, band-passed click, periodic
