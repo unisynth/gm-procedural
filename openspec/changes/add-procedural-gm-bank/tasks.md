@@ -194,6 +194,9 @@ explaining the limit.
   6 pipe, 8 reed waves (a pluck as chiff/reed onset — listen). Tier C left (< 0.5): organ 121, 111, 110, 157, 158,
   112; pipe 51, 353, 52; reed 134, 67. Report A 54, B 90, C 351, placeholders 191, mean 0.429, no regressions.
 - [ ] 8.4 Brass (37), strings (32) and ensemble (15)
+  First pass (categories hold 35/24/13): 71/72 written, mean 0.73 / 0.70 / 0.54. Tier C left (< 0.5): brass 55,
+  342, 251; strings 189, 485, 303; ensemble 283, 392, 389, 391, 390, 311, 85. `ks` attacks in 22 (13 strings —
+  pizzicato plausible, bowed needs listening). Report A 66, B 117, C 312, placeholders 123, mean 0.516.
 - [ ] 8.5 Synth lead (25), pad (25) and synth FX (17)
 - [ ] 8.6 Piano (36) and chromatic percussion (19)
 - [ ] 8.7 Ethnic (31), percussive (9), SFX (10) and any remaining waves. Verify that no placeholder parameters remain
