@@ -3,6 +3,7 @@
 //! The filter acts per harmonic (complex response at the harmonic's frequency), recomputed every `CR` samples and
 //! interpolated between, so no harmonic ever crosses Nyquist and the result is free of filter-state clicks.
 //! Sustain: cutoff frozen at the loop start, every partial on the loop grid (integer phasors) — exactly periodic.
+//! `ph2` starts oscillator 2 off phase: with a one-bin detune a pair beats once per loop, and `ph2` places the beat.
 use crate::math::{cos_cycles, db, exp, exp2, sin_cycles};
 use crate::params::Layer;
 use crate::render::{layer_env, Biquad, Ctx, Kind, Phasor};
@@ -51,7 +52,7 @@ fn partials(ctx: &Ctx, l: &Layer, f0: f32) -> Vec<(Phasor, f32)> {
     let mut out = Vec::new();
     let osc2 = db(l.get("mix2"));
     let f2 = f0 * exp2((l.get("oct2") * 100.0 + l.get("detune")) / 1200.0);
-    for (f, w, pw, g) in [(f0, l.get("wave1"), l.get("pw1"), 1.0), (f2, l.get("wave2"), l.get("pw2"), osc2)] {
+    for (f, w, pw, g, ph) in [(f0, l.get("wave1"), l.get("pw1"), 1.0, 0.0), (f2, l.get("wave2"), l.get("pw2"), osc2, l.get("ph2"))] {
         if g < 1e-4 || f <= 0.0 {
             continue;
         }
@@ -66,7 +67,10 @@ fn partials(ctx: &Ctx, l: &Layer, f0: f32) -> Vec<(Phasor, f32)> {
             }
             let a = amp(w, pw, k) * g;
             if a.abs() > 1e-6 {
-                out.push((Phasor::new((nk % ctx.den as u64) as u32, ctx.den), a));
+                let mut p = Phasor::new((nk % ctx.den as u64) as u32, ctx.den);
+                // Start phase: harmonic k of an oscillator starting at `ph` cycles starts at k·ph.
+                p.acc = (crate::math::fract(ph * k as f32) * ctx.den as f32) as u32 % ctx.den;
+                out.push((p, a));
             }
         }
     }

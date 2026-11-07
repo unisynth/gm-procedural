@@ -135,7 +135,7 @@ pub(crate) fn open_for_fit(l: &mut Layer) {
         // Pick position, burst length and body stay structural (analysis grid).
         "ks" => &["level_db", "a", "d", "s", "t60", "damp", "dyn", "stretch"],
         // Waveforms, transpose and filter kind stay structural.
-        "subtractive" => &["level_db", "a", "h", "d", "s", "pw1", "detune", "mix2", "cutoff", "res", "fenv", "fa", "fd"],
+        "subtractive" => &["level_db", "a", "h", "d", "s", "pw1", "detune", "mix2", "cutoff", "res", "fenv", "fa", "fd", "ph2"],
         _ => &[],
     };
     for n in names {

@@ -164,6 +164,11 @@ skip when `GM_DLS` is unset.
   on 2 choir/voice waves. Verify both score above their placeholder score.
 - [ ] 7.4 Add the `subtractive` family (2 oscillators, resonant filter with envelope), with tests for cutoff response.
   Check it on 3 synth lead/pad/bass waves. Verify all 3 score above their placeholder score.
+  Family + analysis done (`fam/subtractive.rs`, `gmfit/src/subtractive.rs`, `ph2` places a detuned pair's beat).
+  Bulk on the 15 weakest lead/pad/fx waves: only Solo Vox 170 won (0.11 → 0.20). Open: the GM Square Wave 386 is
+  two equal squares one loop-grid bin apart (beat dips −19 dB once per loop); a hand-built pair matches the loop's
+  lines, yet the score keeps d_loop ≈ 19 and the hearing model swings missing 0.61 → added 1.24 over 8 dB — while the
+  bank's modal 386 (score 0.09) already hears identical. Needs listening before more tuning.
 - [x] 7.5 Add the `shaker` family (PhISEM collision events into ≤ 3 resonances), with tests that the event rate
   and resonance peaks fall within 10 % of the set values. Check it on maracas, tambourine and applause. Verify all 3
   score above their placeholder score. (Design D4o: maracas 230 0.66, tambourine 435 0.61, applause 26 0.48, stream

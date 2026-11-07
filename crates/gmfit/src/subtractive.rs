@@ -56,7 +56,7 @@ pub fn candidates(i: usize, orig: &[f32], m: &WaveMeta, cur: &Params) -> Vec<Par
     let mut best = f32::MIN;
     let top = 0.45 * rate;
     // Waveform × cutoff: the two decide the spectrum's shape together.
-    for (w, pw) in [(0.0f32, 0.5f32), (1.0, 0.5), (1.0, 0.25), (1.0, 0.1), (2.0, 0.5)] {
+    for (w, pw) in [(0.0f32, 0.5f32), (1.0, 0.5), (1.0, 0.45), (1.0, 0.4), (1.0, 0.25), (1.0, 0.1), (2.0, 0.5)] {
         for mul in [2.0f32, 4.0, 8.0, 16.0, 40.0] {
             let mut c = q.clone();
             c.layers[0].set("wave1", w);
@@ -87,10 +87,25 @@ pub fn candidates(i: usize, orig: &[f32], m: &WaveMeta, cur: &Params) -> Vec<Par
         for &(k, v) in set {
             c.layers[0].set(k, v);
         }
-        let s = eval(&mut c);
-        if s > best {
-            best = s;
-            q = c;
+        if set.iter().any(|s| s.0 == "mix2") {
+            // Oscillator 2 is the same waveform (a detuned pair of squares cancels half a period apart: the GM square
+            // wave's 15–20 dB beat dips).
+            let (w, pw) = (c.layers[0].get("wave1"), c.layers[0].get("pw1"));
+            c.layers[0].set("wave2", w);
+            c.layers[0].set("pw2", pw);
+        }
+        // A second oscillator is worth only as much as its best placement: the beat's phase in the loop.
+        let phases: &[f32] = if set.iter().any(|s| s.0 == "mix2") { &[0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875] } else { &[-1.0] };
+        for &ph in phases {
+            let mut c = c.clone();
+            if ph >= 0.0 {
+                c.layers[0].set("ph2", ph);
+            }
+            let s = eval(&mut c);
+            if s > best {
+                best = s;
+                q = c;
+            }
         }
     }
     if std::env::var_os("GMFIT_TRACE").is_some() {

@@ -175,7 +175,7 @@ static KS: [Scalar; 15] = with_env![
         s("buzz", 0.0, 1.0, 0.0),        // asymmetric bridge contact (sitar buzz)
 ];
 
-static SUBTRACTIVE: [Scalar; 20] = with_env![
+static SUBTRACTIVE: [Scalar; 21] = with_env![
         s("level_db", -80.0, 24.0, 0.0),
         s("cents", -1200.0, 1200.0, 0.0),
         s("wave1", 0.0, 2.0, 0.0),           // 0 saw, 1 pulse, 2 triangle
@@ -191,6 +191,7 @@ static SUBTRACTIVE: [Scalar; 20] = with_env![
         s("fenv", -8.0, 8.0, 0.0),           // cutoff envelope amount (octaves)
         s("fa", 0.0, 2.0, 0.001),            // cutoff envelope attack (s)
         s("fd", 0.001, 10.0, 0.2),           // cutoff envelope decay time constant (s)
+        s("ph2", 0.0, 1.0, 0.0),             // oscillator 2 start phase (cycles): where a detuned pair beats
 ];
 
 pub const FAMILIES: &[Family] = &[
