@@ -175,6 +175,24 @@ static KS: [Scalar; 15] = with_env![
         s("buzz", 0.0, 1.0, 0.0),        // asymmetric bridge contact (sitar buzz)
 ];
 
+static SUBTRACTIVE: [Scalar; 20] = with_env![
+        s("level_db", -80.0, 24.0, 0.0),
+        s("cents", -1200.0, 1200.0, 0.0),
+        s("wave1", 0.0, 2.0, 0.0),           // 0 saw, 1 pulse, 2 triangle
+        s("pw1", 0.01, 0.99, 0.5),
+        s("wave2", 0.0, 2.0, 0.0),
+        s("pw2", 0.01, 0.99, 0.5),
+        s("oct2", -24.0, 24.0, 0.0),         // oscillator 2 transpose (semitones)
+        s("detune", -100.0, 100.0, 0.0),     // oscillator 2 detune (cents)
+        s("mix2", -80.0, 12.0, -80.0),       // oscillator 2 level (dB; −80 off)
+        s("cutoff", 20.0, 20000.0, 20000.0), // filter cutoff (Hz)
+        s("res", 0.3, 30.0, 0.707),          // filter Q
+        s("kind", 0.0, 2.0, 0.0),            // 0 low-pass, 1 high-pass, 2 band-pass
+        s("fenv", -8.0, 8.0, 0.0),           // cutoff envelope amount (octaves)
+        s("fa", 0.0, 2.0, 0.001),            // cutoff envelope attack (s)
+        s("fd", 0.001, 10.0, 0.2),           // cutoff envelope decay time constant (s)
+];
+
 pub const FAMILIES: &[Family] = &[
     // Harmonic table `harm` (dB per harmonic 1..K), optional `phase` (cycles, harmonics 1..P).
     Family {
@@ -228,6 +246,8 @@ pub const FAMILIES: &[Family] = &[
     },
     // Karplus-Strong plucked string; `body`: [Hz, Q, dB] commuted body resonances (≤ 4). Not periodic.
     Family { name: "ks", scalars: &KS, tables: &[Table { name: "body", width: 3, max_rows: 4 }], periodic: false },
+    // Two harmonic-series oscillators through a resonant filter with its own envelope; periodic (loop grid).
+    Family { name: "subtractive", scalars: &SUBTRACTIVE, tables: &[], periodic: true },
 ];
 
 pub fn family(name: &str) -> Option<usize> {

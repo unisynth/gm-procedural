@@ -144,6 +144,7 @@ pub mod wavelet;
 pub mod priors;
 pub mod score;
 pub mod shaker;
+pub mod subtractive;
 pub mod sheet;
 pub mod sf2;
 

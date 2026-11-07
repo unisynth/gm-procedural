@@ -215,6 +215,7 @@ pub fn render(meta: &WaveMeta, p: &Params, seed: u32) -> Vec<f32> {
             "fm" => fam::fm::render(&ctx, layer, &mut buf),
             "formant" => fam::formant::render(&ctx, layer, &mut buf),
             "ks" => fam::ks::render(&ctx, layer, &mut buf),
+            "subtractive" => fam::subtractive::render(&ctx, layer, &mut buf),
             _ => {}
         }
         if let (Region::Attack, Some((s, _))) = (region, lp) {

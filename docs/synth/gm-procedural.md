@@ -267,6 +267,30 @@ at a time (2 passes) on the fit objective, the level recalibrated each step. Loo
 head (3 ms … ⅓ of the attack), sustain layers delayed to fade in over its last 10 ms and re-levelled on the loop (the
 delayed envelope freezes elsewhere on its curve). Fit opens `level_db a d s t60 damp dyn stretch`.
 
+### `subtractive` (all regions; sustain exactly periodic)
+
+Two oscillators through a resonant filter, `gmgen/src/fam/subtractive.rs`. Oscillators are band-limited harmonic
+series (saw 2/πk, pulse, triangle; below 0.45·rate); the filter (RBJ low/high/band-pass) acts per harmonic as its
+complex response, recomputed every 32 samples and interpolated between. Sustain: cutoff frozen at the loop start,
+partials on the loop grid — exactly periodic.
+
+| Parameter | Range | Default | Meaning |
+|---|---|---|---|
+| `level_db`, `cents` | −80…24, ±1200 | 0, 0 | layer level, pitch offset |
+| `wave1`, `pw1` | 0…2, 0.01…0.99 | 0, 0.5 | oscillator 1: 0 saw, 1 pulse (width), 2 triangle |
+| `wave2`, `pw2`, `oct2`, `detune`, `mix2` | …, ±24 st, ±100 ¢, −80…12 dB | 0, 0.5, 0, 0, −80 | oscillator 2 (−80 dB: off) |
+| `cutoff`, `res`, `kind` | 20…20000 Hz, 0.3…30, 0…2 | 20000, 0.707, 0 | filter cutoff, Q, 0 LP / 1 HP / 2 BP |
+| `fenv`, `fa`, `fd` | ±8 oct, 0…2 s, 0.001…10 s | 0, 0.001, 0.2 | cutoff envelope: amount, attack, decay back to `cutoff` |
+
+Tests: harmonic levels follow the biquad within 1 dB (LP 1 kHz Q 2), a 4-octave filter envelope puts the highs
+≥ 20 dB higher early than late, sustain exact over the loop with a detuned second oscillator. Renders stay under
+`render::soft_knee` (0.9) only when levelled: a resonant saw peaks above full scale at 0 dB.
+
+Analysis (`gmfit/src/subtractive.rs`): pitched waves; waveform × cutoff (2–40 × f0) jointly, then resonance, a second
+oscillator (detuned unison 7/15 ¢, ±1 octave), and the filter envelope, one step at a time on the fit objective, the
+level recalibrated each step. Looped: one sustain layer; unlooped: one whole layer with the measured decay. Fit opens
+`level_db a h d s pw1 detune mix2 cutoff res fenv fa fd`.
+
 ## Commands
 
 ```bash

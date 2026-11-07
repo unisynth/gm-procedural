@@ -8,3 +8,4 @@ pub mod metal;
 pub mod modal;
 pub mod noise;
 pub mod shaker;
+pub mod subtractive;

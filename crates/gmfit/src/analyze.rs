@@ -134,6 +134,8 @@ pub(crate) fn open_for_fit(l: &mut Layer) {
         "formant" => &["level_db", "a", "h", "d", "s", "noise", "jitter", "breath_db", "syl_a", "syl_d", "syl_glide", "vib_rate", "vib_cents"],
         // Pick position, burst length and body stay structural (analysis grid).
         "ks" => &["level_db", "a", "d", "s", "t60", "damp", "dyn", "stretch"],
+        // Waveforms, transpose and filter kind stay structural.
+        "subtractive" => &["level_db", "a", "h", "d", "s", "pw1", "detune", "mix2", "cutoff", "res", "fenv", "fa", "fd"],
         _ => &[],
     };
     for n in names {
@@ -1049,6 +1051,8 @@ pub fn analyze_alts(i: usize, orig: &[f32], m: &WaveMeta, alts: &mut Vec<(f32, P
         cands.extend(crate::formant::candidates(i, orig, m, &p.wave));
         // Karplus-Strong (task 7.1): plucked strings — whole, or the attack before the loop.
         cands.extend(crate::ks::candidates(i, orig, m, &p));
+        // Subtractive (task 7.4): oscillators through a resonant filter — synth leads, pads, basses.
+        cands.extend(crate::subtractive::candidates(i, orig, m, &p));
         if let Ok(dir) = std::env::var("GMFIT_FM_DUMP") {
             for (c, q) in cands.iter().enumerate() {
                 let wf = WaveFile { wave: i as u32, params: q.clone(), placeholder: false, note: String::new() };
