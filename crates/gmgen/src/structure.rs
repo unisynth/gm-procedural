@@ -43,8 +43,10 @@ pub fn to_json(b: &Bank) -> String {
         .iter()
         .map(|w| json!({"rate": w.rate, "len": w.samples.len(), "wsmp": wsmp(&w.wsmp)}).to_string())
         .collect();
+    // Stereo pairs (change add-gmplus-bank D4/D5) only when present: the gm.dls file stays byte-identical.
+    let pairs = if b.pairs.is_empty() { String::new() } else { format!(",\n\"pairs\": {}", json!(b.pairs)) };
     format!(
-        "{{\"format\": \"{FORMAT}\",\n\"instruments\": [\n{}\n],\n\"waves\": [\n{}\n]}}\n",
+        "{{\"format\": \"{FORMAT}\",\n\"instruments\": [\n{}\n],\n\"waves\": [\n{}\n]{pairs}}}\n",
         ins.join(",\n"),
         waves.join(",\n")
     )
@@ -136,5 +138,20 @@ pub fn from_json(text: &str) -> Result<Bank, String> {
             samples: vec![0; num(&w["len"], &what)? as usize],
         });
     }
-    Ok(Bank { instruments, waves })
+    let mut pairs = Vec::new();
+    if !v["pairs"].is_null() {
+        for (k, p) in arr(&v["pairs"], "pairs")?.iter().enumerate() {
+            let what = format!("pair {k}");
+            let p = arr(p, &what)?;
+            if p.len() != 2 {
+                return Err(format!("{what}: needs [left, right]"));
+            }
+            let (l, r) = (num(&p[0], &what)?, num(&p[1], &what)?);
+            if l as usize >= waves.len() || r as usize >= waves.len() {
+                return Err(format!("{what}: wave out of range"));
+            }
+            pairs.push((l as u32, r as u32));
+        }
+    }
+    Ok(Bank { instruments, waves, pairs })
 }

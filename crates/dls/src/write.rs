@@ -9,6 +9,8 @@ pub struct Bank {
     pub instruments: Vec<Ins>,
     /// Pool order: `Rgn::wave` indexes this.
     pub waves: Vec<WaveData>,
+    /// Stereo pairs `(left, right)` (`LIST 'stpr' { pair }`, change add-gmplus-bank D5); empty = no chunk.
+    pub pairs: Vec<(u32, u32)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,7 +84,7 @@ impl Bank {
                 None => WaveData { rate: 22050, wsmp: Wsmp::default(), samples: Vec::new() },
             })
             .collect();
-        Bank { instruments, waves }
+        Bank { instruments, waves, pairs: d.pairs().collect() }
     }
 }
 
@@ -222,6 +224,16 @@ pub fn write(b: &Bank) -> Vec<u8> {
             }
         });
         w.chunk(b"LIST", Some(b"wvpl"), |w| w.0.extend_from_slice(&pool.0));
+        if !b.pairs.is_empty() {
+            w.chunk(b"LIST", Some(b"stpr"), |w| {
+                w.chunk(b"pair", None, |w| {
+                    for &(l, r) in &b.pairs {
+                        w.u32(l);
+                        w.u32(r);
+                    }
+                })
+            });
+        }
     });
     out.0
 }

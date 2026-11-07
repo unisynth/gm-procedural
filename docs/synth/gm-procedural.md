@@ -290,15 +290,23 @@ every song plays unchanged. Each wave moves to 32 kHz, and its length and loop c
 - **Inputs.** The soundfont comes from `GMPLUS_SF2`, a local `gmplus.sf2` that is never committed (Release 1, see
   `research/gm-procedural-instruments.md` §4). `GM_DLS` is still needed, for level matching and the one fallback.
 - **Targets** (`crates/gmfit/src/plus.rs`, design D2):
-  - The zone is the one gmplus plays at the wave's key (`main_user`: the region `play_speed` picks), at velocity 100.
-  - The sample is DC-blocked at 10 Hz and resampled to 32 kHz (`dsp.rs`, Kaiser sinc) so the gm.dls region playing
-    it at that key sounds as gmplus does. gmplus's own tuning is kept, including its stretched piano.
+  - The zones are the ones gmplus plays at the wave's key (`main_user`: the region `play_speed` picks), at velocity
+    100. Layered zones (93 waves) are all rendered and summed, with `initialAttenuation` × 0.4 (E-mu / FluidSynth)
+    relative to the loudest zone.
+  - Each sample is resampled to 32 kHz (`dsp.rs`, Kaiser sinc) so the gm.dls region playing it at that key sounds as
+    gmplus does. gmplus's own tuning is kept, including its stretched piano. DC: a looped sample loses its loop's
+    mean; a one-shot goes through a 10 Hz high-pass.
   - The mod envelope bends pitch (`modEnvToPitch`) and sweeps the zone low-pass (`modEnvToFilterFc`) through the
     attack, up to 1 s, then freezes for the loop.
-  - The loop is a whole number of source loops with an integer length. The leftover pitch error goes into the fine
-    tune.
-  - The target is level-matched to the gm.dls wave (A-weighted RMS of 0.5 s played). Peaks above 0.85 move into the
-    wsmp gain.
+  - The first looped zone sets the loop: a whole number of its source loops (up to 256) with an integer length. The
+    other zones lock to it when it holds whole source loops of them within 1 cent; otherwise (detuned unisons, noise,
+    fifths: 76 waves) they keep their exact pitch and are crossfaded across the loop end. The largest residual is
+    0.448 cent. One-shot zones end before the loop.
+  - Fitting: on the plus set a string-attack hand-over is only used when the loop starts within 0.3 s
+    (`analyze.rs` `HANDOVER_MAX_S`). After a long baked attack it was heard as a break mid-note (240, 293: a 2–3 dB
+    hole then a step at the loop, which the score averages away); late loops use a sustain layer from the start.
+  - The target is level-matched to the gm.dls wave: the loudest 100 ms (A-weighted RMS) of the first 1 s played.
+    Peaks above 0.85 move into the wsmp gain.
 - **Map.** `gmfit plus-map` writes `assets/gm-plus/map.json` (`gm-plus-map/1`, one row per wave, no audio): preset,
   key, zone, sample, step, loop, `fine_delta`, `wsmp_gain_db`, filter, pitch envelope, freeze time, and `fallback`
   for a wave with no gmplus zone. Only wave 366, Gt. Feedback (bank 8, program 31), falls back.
@@ -314,11 +322,12 @@ every song plays unchanged. Each wave moves to 32 kHz, and its length and loop c
   |---|---|---|
   | gm (committed fits) | 1.54 M | 6.8 s |
   | plus skeleton with the gm parameters | 10.82 M (7.0×) | ≈ 54 s |
+  | plus, layered targets (3.3 review) | 12.46 M (8.1×) | ≈ 1 min (est.) |
 
   The 7× comes from 32 kHz, gmplus's longer native samples, and up to 1 s of baked envelope motion. Without baking it
   would be 2.6×; with a 0.25 s limit, 3.5×. Fidelity was chosen over load time (1 s kept). Generation speed is the
   open budget item of `add-procedural-gm-bank` 9.4 (≤ 300 ms native, ≤ 1 s wasm for the gm set). `tests_plus.rs`
-  `plus_sample_budget` fails above 11.5 M samples.
+  `plus_sample_budget` fails above 13 M samples.
 
 ```bash
 export GM_DLS=~/Downloads/64k-tools/gmdls/gm.dls GMPLUS_SF2=~/Downloads/64k-tools/gmplus/gmplus.sf2
@@ -369,7 +378,13 @@ bun tools/gm-songs/run.ts render [--shard i/n]  # mixes + solo channels × 4 ban
 gmfit dump build/gm/songs/waves/gm && gmfit --set plus dump build/gm/songs/waves/plus
 bun tools/gm-songs/run.ts waves             # build/gm/songs/waves/NNN-{orig,sf,gen,plus}.mp3
 bun tools/gm-songs/run.ts page              # build/gm/songs/index.html (songs) + waves.html (sounds) + report.md
+bun tools/gm-songs/run.ts serve [port]      # http://localhost:60941/ — serve it with Range support
 ```
+
+Serve the pages with `serve`: seeking and same-position bank switching need Range requests (206); a server that
+answers 200 (e.g. the dashboard's mockup server) resets every switch to the start.
+
+gen-plus stereo: AUMIDISynth plays mono waves, so `prepare` writes `banks/plus-R.dls`, a copy whose paired left waves hold their partners' PCM, and every gen-plus render is two passes: the left output of `plus.dls` and the right output of `plus-R.dls` (exact: `prepare` checks that a render is deterministic).
 
 Cost: about 6 min per song per process (renders take ~1 s per bank; metrics and mp3 dominate), so the 70 songs
 take about an hour on 8 shards. The sounds step takes under 30 s.

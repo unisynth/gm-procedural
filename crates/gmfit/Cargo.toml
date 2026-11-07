@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 dls = { path = "../dls", features = ["write"] }
-gmgen = { path = "../gmgen", features = ["std"] }
+gmgen = { path = "../gmgen", features = ["std", "plus"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 rustfft = "6"
 png = "0.17"

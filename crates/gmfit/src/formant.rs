@@ -175,7 +175,7 @@ fn relevel(i: usize, orig: &[f32], p: &mut Params, k: usize, range: std::ops::Ra
         pw[lo.min(pw.len() - 1)..hi.min(pw.len() - 1).max(lo.min(pw.len() - 1) + 1)].iter().sum::<f32>().max(1e-20)
     };
     for _ in 0..3 {
-        let y = gmgen::render_wave(i, p);
+        let y = crate::render_wave(i, p);
         let t = &mut p.layers[k].tables[0];
         for r in t.chunks_mut(3) {
             let d = 10.0 * (band(orig, r[0], r[1]) / band(&y, r[0], r[1])).log10();
@@ -331,7 +331,7 @@ pub fn candidates(i: usize, orig: &[f32], m: &WaveMeta, wave: &[f32]) -> Vec<Par
         relevel(i, orig, &mut p, 0, 0..orig.len(), rate);
         // Breath against the floor: 3 passes of the median floor difference.
         for _ in 0..3 {
-            let y = gmgen::render_wave(i, &p);
+            let y = crate::render_wave(i, &p);
             let ey: Vec<f32> = y.chunks(fr).map(|c| 20.0 * rms(c).max(1e-9).log10()).collect();
             let fy: Vec<f32> = (0..ey.len()).map(|k| ey[k.saturating_sub(k40)..(k + k40 + 1).min(ey.len())].iter().copied().fold(f32::MAX, f32::min)).collect();
             let mut d: Vec<f32> = floor_tr.iter().zip(&fy).map(|(a, b)| a - b).collect();

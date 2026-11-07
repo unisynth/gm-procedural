@@ -24,7 +24,16 @@ pub mod params_json;
 #[cfg(feature = "std")]
 pub mod structure;
 
+#[cfg(feature = "plus")]
+pub mod plus;
+
+/// The set this build plays: gm.dls by default, the gmplus set with feature `plus` (change add-gmplus-bank).
+#[cfg(not(feature = "plus"))]
 pub use bank::{build, render_wave, wave_count};
+#[cfg(feature = "plus")]
+pub use plus::{build, render_wave, wave_count};
 
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, feature = "plus"))]
+mod tests_plus;

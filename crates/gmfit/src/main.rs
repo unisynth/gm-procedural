@@ -4,6 +4,8 @@
 //! gmfit bank [--orig] [-o build/gm/gen.dls]   write the generated bank (committed parameters) as a DLS file;
 //!                                               --orig re-writes GM_DLS through the same writer
 //! gmfit placeholder                             write a placeholder parameter file for every wave without one
+//! gmfit --set plus partners                  stereo partners = left parameters + correction vs the right target
+//! gmfit --set plus stereo                    stereo check of every pair (left vs mid score, loop correlation)
 //! gmfit dump <dir> [--secs 2]                 every wave's orig/gen wav (played) + index.json, for the A/B pages
 //! gmfit render <wave> [-p file.json]            A/B wav + sheet.png + report.json in build/gm/NNN, JSON on stdout
 //! gmfit sweep <wave> <param> <v1,v2,..>         one scored, rendered variant per value (files unchanged)
@@ -31,8 +33,8 @@ fn die(msg: impl std::fmt::Display) -> ! {
 
 fn wave_arg(args: &[String]) -> usize {
     let i: usize = args.get(1).and_then(|a| a.parse().ok()).unwrap_or_else(|| die("missing wave index"));
-    if i >= gmgen::wave_count() {
-        die(format!("wave {i} out of range (0..{})", gmgen::wave_count()));
+    if i >= gmfit::wave_count() {
+        die(format!("wave {i} out of range (0..{})", gmfit::wave_count()));
     }
     i
 }
@@ -78,7 +80,7 @@ fn main() {
             let dir = gmfit::assets_dir().join("waves");
             std::fs::create_dir_all(&dir).unwrap_or_else(|e| die(e));
             let mut made = 0;
-            for i in 0..gmgen::wave_count() {
+            for i in 0..gmfit::wave_count() {
                 let path = dir.join(format!("{i:03}.json"));
                 if path.exists() {
                     continue;
@@ -110,8 +112,10 @@ fn main() {
             match orig.targets() {
                 // plus: target / generated / the gm.dls wave (resampled to the plus rate) as a third row
                 Some(_) => {
-                    let gm_meta = gmgen::bank::meta(i).unwrap();
-                    let g = gmfit::audio::played(&orig.gm_wave(i), &gm_meta, score::PLAYED_SECS);
+                    // a stereo partner shows its left wave's gm.dls wave
+                    let v = gmfit::voice(i);
+                    let gm_meta = gmgen::bank::meta(v).unwrap();
+                    let g = gmfit::audio::played(&orig.gm_wave(v), &gm_meta, score::PLAYED_SECS);
                     let step = gm_meta.rate as f64 / m.rate as f64;
                     let g = gmfit::dsp::resample(&g, 0.0, step, ((g.len() as f64 - 1.0) / step) as usize);
                     sheet::rows(&dir.join("sheet.png"), &sa, &[sb.clone(), g], m.rate as f32).unwrap_or_else(|e| die(e));
@@ -256,7 +260,7 @@ fn main() {
             let rounds = opt("--rounds").map_or(2, |v| v.parse().unwrap_or_else(|_| die("--rounds: number")));
             let jobs = opt("--jobs").map_or(4, |v| v.parse().unwrap_or_else(|_| die("--jobs: number")));
             let waves: Vec<usize> = match opt("--cat") {
-                Some(c) => (0..gmgen::wave_count()).filter(|&i| gmfit::users(i).1 == c).collect(),
+                Some(c) => (0..gmfit::wave_count()).filter(|&i| gmfit::users(i).1 == c).collect(),
                 None => args[1..]
                     .iter()
                     .enumerate()
@@ -264,6 +268,9 @@ fn main() {
                     .filter_map(|(_, a)| a.parse().ok())
                     .collect(),
             };
+            // stereo partners follow their left wave (`partners`) unless `--partners` (different samples per side)
+            let partners = flag("--partners");
+            let waves: Vec<usize> = waves.into_iter().filter(|&i| partners || gmfit::voice(i) == i || { eprintln!("bulk: {i} is a stereo partner, use `partners` (or --partners)"); false }).collect();
             let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
             let next = std::sync::atomic::AtomicUsize::new(0);
             let write = std::sync::Mutex::new(());
@@ -295,6 +302,61 @@ fn main() {
                 }
             });
         }
+        Some("partners") => {
+            // partners: every stereo partner = its left wave's parameters (same phases and seeds: gmplus's channels
+            // correlate 0.97–1.00) plus the analytic correction against the right-channel target. Written as a pair
+            // decision, not by the partner's own rank. Then the stereo check row.
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let mut scores = gmfit::load_scores();
+            for &(l, r) in &gmfit::skeleton().pairs {
+                let (l, r) = (l as usize, r as usize);
+                let left = gmfit::load_wave(l).unwrap_or_else(|e| die(e));
+                let o = orig.wave(r);
+                // different samples per side (target channels uncorrelated): the partner is fitted on its own
+                // (`bulk --partners`); a copy of the left could not become another sample
+                let m = gmfit::meta(l).unwrap();
+                let tc = gmfit::stereo_check(&orig.wave(l), &o, &orig.wave(l), &o, &m)["target_corr"].as_f64().unwrap_or(1.0);
+                if tc < 0.5 {
+                    println!("{}", json!({"wave": l, "partner": r, "target_corr": tc, "independent": true}));
+                    continue;
+                }
+                let copy = gmfit::fit::score_of(&o, r, &left.params);
+                let (q, s) = gmfit::fit::correct_all(&o, r, &left.params);
+                let params = if s > copy { q } else { left.params.clone() };
+                let wf = gmgen::params_json::WaveFile { wave: r as u32, params, placeholder: false, note: format!("stereo partner of {l}: its parameters + correction") };
+                wf.params.validate().unwrap_or_else(|e| die(format!("partner {r}: {e}")));
+                std::fs::write(gmfit::wave_path(r), gmgen::params_json::to_json(&wf)).unwrap_or_else(|e| die(e));
+                let on_disk = gmfit::load_wave(r).unwrap_or_else(|e| die(e));
+                let (sc, _, gr) = gmfit::evaluate(&o, r, &on_disk.params);
+                scores.insert(r.to_string(), sc.json());
+                let mut row = gmfit::stereo_check(&orig.wave(l), &o, &gmfit::render_wave(l, &left.params), &gr, &m);
+                row["wave"] = json!(l);
+                row["partner"] = json!(r);
+                row["right_score"] = json!(score::r4(sc.score));
+                row["copy_score"] = json!(score::r4(copy));
+                println!("{row}");
+            }
+            gmfit::save_scores(&scores).unwrap_or_else(|e| die(e));
+        }
+        Some("stereo") => {
+            // stereo: every pair of the plus set — left alone and mid vs the mono target, loop correlation, flags.
+            let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
+            let pairs = gmfit::skeleton().pairs;
+            let mut flagged = 0;
+            for &(l, r) in &pairs {
+                let (l, r) = (l as usize, r as usize);
+                let (wl, wr) = (gmfit::load_wave(l).unwrap_or_else(|e| die(e)), gmfit::load_wave(r).unwrap_or_else(|e| die(e)));
+                let m = gmfit::meta(l).unwrap();
+                let (gl, gr) = (gmfit::render_wave(l, &wl.params), gmfit::render_wave(r, &wr.params));
+                let mut row = gmfit::stereo_check(&orig.wave(l), &orig.wave(r), &gl, &gr, &m);
+                row["wave"] = json!(l);
+                row["partner"] = json!(r);
+                row["placeholder"] = json!(wl.placeholder || wr.placeholder);
+                flagged += !row["flags"].as_array().unwrap().is_empty() as usize;
+                println!("{row}");
+            }
+            eprintln!("stereo: {} pairs, {flagged} flagged", pairs.len());
+        }
         Some("dump") => {
             // dump <dir> [--secs s]: every wave of the set as <dir>/NNN-orig.wav + NNN-gen.wav (played for s seconds,
             // default 2) and <dir>/index.json (score, flags, placeholder, users) — the per-sound comparison page.
@@ -302,7 +364,7 @@ fn main() {
             let secs: f32 = opt("--secs").map_or(2.0, |v| v.parse().unwrap_or_else(|_| die("--secs: number")));
             std::fs::create_dir_all(&dir).unwrap_or_else(|e| die(e));
             let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
-            let n = gmgen::wave_count();
+            let n = gmfit::wave_count();
             let next = std::sync::atomic::AtomicUsize::new(0);
             let rows = std::sync::Mutex::new(vec![Value::Null; n]);
             std::thread::scope(|sc| {
@@ -337,6 +399,9 @@ fn main() {
             let t = orig.targets().expect("plus set");
             let (path, summary) = t.write_map(&orig.dls()).unwrap_or_else(|e| die(e));
             println!("{}", json!({"map": path.display().to_string(), "summary": summary}));
+            if summary["errors"].as_u64() != Some(0) {
+                die("plus-map: some waves have no target (rows with \"error\" in the map)");
+            }
         }
         Some("report") => report(flag("--check"), flag("--baseline")),
         _ => die("usage: gmfit extract | placeholder | analyze <w> | fit <w> | correct <w> | refine <w> | render <w> [-p f] | dump <dir> [--secs s] | hear <w> [-p f] | sweep <w> <param> <values> | bulk (--cat c | <w>...) [--iters n] [--rounds n] [--jobs n] | report [--check] [--baseline]"),
@@ -345,7 +410,7 @@ fn main() {
 
 fn report(check: bool, baseline: bool) {
     let orig = gmfit::Orig::load().unwrap_or_else(|e| die(e));
-    let n = gmgen::wave_count();
+    let n = gmfit::wave_count();
     let waves: Vec<usize> = (0..n).collect();
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
     type Row = (score::Score, bool, usize, Vec<f32>, Vec<f32>);

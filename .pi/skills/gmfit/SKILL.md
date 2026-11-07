@@ -120,6 +120,12 @@ Thresholds are provisional (add-wav-resynthesis design D5). Treat OFF as "listen
   Re-run analysis or trim (weak `side` rows first, then the harmonic tail).
 - **Changing a schema grid** (`TF_BANDS` …) invalidates committed `tf` rows. Strip them and reset the score
   before refitting.
+- **Stale scores after a target change.** `keep_if_better` ranks against `scores.json`. When targets change (a new map,
+  stereo left channels), run `report --baseline` *before* refitting, or better fits are rejected against scores
+  from the old target (plus stereo lefts: 10 waves, e.g. 387 0.07 vs a rejected 0.36).
+- **Hand-over breaks.** A delayed sustain layer taking over from an attack layer (`dly` > 0) can leave a level hole
+  or step at the switch that the score averages away (plus 293: 0.740 with the break, 0.709 without). Listen at the
+  `dly`, and compare the 10 ms envelope difference to the original: a step > 1.5 dB is a break.
 - **Structural scalars** (`unison`, `dly`, `spread`, `vib_rate`, `phase_seed`, delayed-layer `a h d s`) stay
   out of CMA-ES; the fit drifts them off the loop grid.
 - **Drums.** A fresh `analyze` can be worse than a refined committed file (snare: 0.557 `env_off` vs 0.677).

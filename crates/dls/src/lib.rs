@@ -94,6 +94,8 @@ pub struct Dls<'a> {
     lins: &'a [u8],
     ptbl: &'a [u8],
     wvpl: &'a [u8],
+    /// `LIST 'stpr' { pair }` data: `u32` (left, right) wave pairs (change add-gmplus-bank D5); empty when absent.
+    pairs: &'a [u8],
 }
 
 impl<'a> Dls<'a> {
@@ -107,7 +109,8 @@ impl<'a> Dls<'a> {
         let lins = find_list(body, &[b"lins"]).ok_or(Error::Missing(*b"lins"))?;
         let ptbl = find(body, b"ptbl").ok_or(Error::Missing(*b"ptbl"))?;
         let wvpl = find_list(body, &[b"wvpl"]).ok_or(Error::Missing(*b"wvpl"))?;
-        Ok(Dls { count: u32_at(colh, 0).unwrap_or(0), lins, ptbl, wvpl })
+        let pairs = find_list(body, &[b"stpr"]).and_then(|l| find(l, b"pair")).unwrap_or(&[]);
+        Ok(Dls { count: u32_at(colh, 0).unwrap_or(0), lins, ptbl, wvpl, pairs })
     }
 
     /// Instrument count declared in `colh`.
@@ -140,6 +143,22 @@ impl<'a> Dls<'a> {
             return None;
         }
         Wave::parse(c.data)
+    }
+
+    /// Raw `(left, right)` pairs of the stereo-pair chunk, unvalidated.
+    pub fn pairs(&self) -> impl Iterator<Item = (u32, u32)> + use<'a> {
+        let p = self.pairs;
+        (0..p.len() / 8).filter_map(move |k| Some((u32_at(p, k * 8)?, u32_at(p, k * 8 + 4)?)))
+    }
+
+    /// Right-channel partner of wave `left`: the first pair naming it whose waves both parse and share rate, length
+    /// and loop. Anything else is ignored (mono).
+    pub fn partner(&self, left: u32) -> Option<u32> {
+        let l = self.wave(left)?;
+        self.pairs().filter(|&(a, _)| a == left).find_map(|(_, r)| {
+            let w = self.wave(r)?;
+            (r != left && w.rate == l.rate && w.len() == l.len() && w.wsmp.looped == l.wsmp.looped).then_some(r)
+        })
     }
 
     /// Wave plus effective sample params (region `wsmp` overrides the wave's).

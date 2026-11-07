@@ -73,6 +73,15 @@ pub fn skeleton() -> dls::write::Bank {
     }
 }
 
+/// Waves of the selected set (gm: 495; plus: 495 + stereo partners). Not `gmgen::wave_count()`: with gmgen's `plus`
+/// feature that is always the plus set.
+pub fn wave_count() -> usize {
+    match set() {
+        Set::Gm => gmgen::bank::wave_count(),
+        Set::Plus => plus_bank().unwrap_or_else(|e| panic!("{e}")).waves.len(),
+    }
+}
+
 /// Rate, length, unity note, tuning and loop of wave `i` in the selected set.
 pub fn meta(i: usize) -> Option<gmgen::render::WaveMeta> {
     match set() {
@@ -86,7 +95,7 @@ pub fn meta(i: usize) -> Option<gmgen::render::WaveMeta> {
 
 /// Wave `i` rendered from `p` on the selected set's skeleton (seed = wave index, as `gmgen::render_wave`).
 pub fn render_wave(i: usize, p: &Params) -> Vec<f32> {
-    meta(i).map_or_else(Vec::new, |m| gmgen::render::render(&m, p, i as u32))
+    meta(i).map_or_else(Vec::new, |m| gmgen::render::render(&m, p, voice(i) as u32))
 }
 
 /// The original bank bytes from `GM_DLS` (set and non-empty), or a message saying it is required.
@@ -184,7 +193,16 @@ impl Orig {
 }
 
 /// Instruments using a wave: names ("drums:<kit> key N" for kits) and the GM category of the first user.
+/// The wave whose regions stand for wave `i`: a stereo partner (plus set) plays through its left wave's regions.
+pub fn voice(i: usize) -> usize {
+    match set() {
+        Set::Gm => i,
+        Set::Plus => plus_bank().ok().and_then(|b| b.pairs.iter().find(|p| p.1 as usize == i)).map_or(i, |p| p.0 as usize),
+    }
+}
+
 pub fn users(i: usize) -> (Vec<String>, &'static str) {
+    let i = voice(i);
     let bank = skeleton();
     let mut names = Vec::new();
     let mut cat = "unused";
@@ -216,7 +234,7 @@ pub fn users(i: usize) -> (Vec<String>, &'static str) {
 /// the nearest key of the range. Listening pages play waves at this speed (kick 1.0, belltree 0.71).
 pub fn play_speed(i: usize) -> (u8, f32, String) {
     let bank = skeleton();
-    main_user(&bank, meta(i).map(|m| (m.unity, m.fine)), i).map_or((60, 1.0, String::new()), |u| {
+    main_user(&bank, meta(i).map(|m| (m.unity, m.fine)), voice(i)).map_or((60, 1.0, String::new()), |u| {
         (u.key, u.speed, String::from_utf8_lossy(&bank.instruments[u.ins].name).trim().to_string())
     })
 }
@@ -441,4 +459,44 @@ pub fn keep_if_better(orig: &Orig, i: usize, mut wf: WaveFile, _score: f32) -> R
     scores.insert(i.to_string(), s.json());
     save_scores(&scores)?;
     Ok(true)
+}
+
+/// Stereo check of a generated pair (change add-gmplus-bank D4): the left wave alone and the mid (L+R)/2, each scored
+/// against the mono target (the targets' mid), and the generated loops' correlation. Flags `stereo_left_off` when the
+/// left alone scores more than 0.05 below the mid, `stereo_low_corr` when the loops correlate below 0.3 while the
+/// targets' loops correlate at 0.3 or more.
+pub fn stereo_check(tl: &[f32], tr: &[f32], gl: &[f32], gr: &[f32], m: &gmgen::render::WaveMeta) -> serde_json::Value {
+    let mid = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| 0.5 * (x + y)).collect::<Vec<f32>>();
+    let mono = mid(tl, tr);
+    let (left, both) = (score::score(&mono, gl, m).score, score::score(&mono, &mid(gl, gr), m).score);
+    let (s, l) = m.looped.map_or((0, gl.len().min(gr.len())), |(s, l)| (s as usize, l as usize));
+    let (a, b) = (&gl[s..s + l], &gr[s..s + l]);
+    let dot = |x: &[f32], y: &[f32]| x.iter().zip(y).map(|(p, q)| *p as f64 * *q as f64).sum::<f64>();
+    let corr = dot(a, b) / (dot(a, a) * dot(b, b)).sqrt().max(1e-12);
+    let (ta, tb) = (&tl[s..s + l], &tr[s..s + l]);
+    let tcorr = dot(ta, tb) / (dot(ta, ta) * dot(tb, tb)).sqrt().max(1e-12);
+    let mut flags = Vec::new();
+    if both - left > 0.05 {
+        flags.push("stereo_left_off");
+    }
+    // decorrelated where gmplus is not (its own channels: 0.97–1.00 for panned copies, ≈ 0 for different samples)
+    if corr < 0.3 && tcorr >= 0.3 {
+        flags.push("stereo_low_corr");
+    }
+    serde_json::json!({"left": score::r4(left), "mid": score::r4(both), "corr": score::r4(corr as f32), "target_corr": score::r4(tcorr as f32), "flags": flags})
+}
+
+#[cfg(test)]
+mod stereo_tests {
+    /// Spec "Stereo stays mono-compatible": a right channel that inverts the left is flagged.
+    #[test]
+    fn phase_inverted_pair_is_flagged() {
+        let m = gmgen::render::WaveMeta { rate: 32000, len: 8000, unity: 60, fine: 0, looped: Some((4000, 4000)) };
+        let x: Vec<f32> = (0..8000).map(|k| (std::f32::consts::TAU * 250.0 * k as f32 / 32000.0).sin() * 0.5).collect();
+        let neg: Vec<f32> = x.iter().map(|v| -v).collect();
+        let ok = super::stereo_check(&x, &x, &x, &x, &m);
+        assert!(ok["flags"].as_array().unwrap().is_empty(), "{ok}");
+        let bad = super::stereo_check(&x, &x, &x, &neg, &m);
+        assert!(bad["flags"].as_array().unwrap().iter().any(|f| f == "stereo_low_corr"), "{bad}");
+    }
 }

@@ -11,6 +11,9 @@ serde_json = { version = "1", optional = true, features = ["preserve_order"] }
 [features]
 # Host-side helpers: structure JSON (de)serialisation, bank selection policy.
 std = ["dep:serde_json"]
+# Also pack `assets/gm-plus/` (gmplus targets at 32 kHz); `gmgen::build` etc. then build that set.
+# `gmgen::bank` stays the gm.dls set. Change add-gmplus-bank.
+plus = []
 
 [build-dependencies]
 dls = { path = "../dls", features = ["write"] }

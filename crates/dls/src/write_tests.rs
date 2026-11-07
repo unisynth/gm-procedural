@@ -57,6 +57,7 @@ fn desc() -> Bank {
             WaveData { rate: 22050, wsmp: ws(60, 3, 0, Some((1, 4))), samples: vec![0, 1000, -1000, 32767, -32768, 5] },
             WaveData { rate: 24000, wsmp: ws(36, 0, 0, None), samples: vec![7, -7, 0] },
         ],
+        pairs: vec![],
     }
 }
 
@@ -111,4 +112,48 @@ fn gm_dls_round_trip() {
         v
     };
     assert_eq!(fp(&p), fp(&Dls::parse(&b).unwrap()));
+}
+
+/// Stereo pairs (change add-gmplus-bank D5): a right wave appended to the pool, never referenced by a region.
+fn paired() -> Bank {
+    let mut b = desc();
+    let r = WaveData { samples: vec![1, 2, 3, 4, 5, 6], ..b.waves[0].clone() };
+    b.waves.push(r);
+    b.pairs = vec![(0, 2)];
+    b
+}
+
+/// Spec "Stereo wave pairs": the writer emits the pairs, the reader reports the partner, and read → write → read
+/// keeps them.
+#[test]
+fn pairs_round_trip() {
+    let b = paired();
+    let bytes = write(&b);
+    let d = Dls::parse(&bytes).unwrap();
+    assert_eq!(d.partner(0), Some(2));
+    assert_eq!(d.partner(1), None);
+    assert_eq!(d.partner(2), None);
+    assert_eq!(Bank::read(&d), b);
+}
+
+/// Spec: a pair whose waves differ in rate, length or loop, or that names a missing wave, is ignored; the bank
+/// still parses.
+#[test]
+fn bad_pairs_are_ignored() {
+    let mut b = paired();
+    b.waves[2].wsmp.looped = Some((0, 4)); // loop differs from wave 0's (1, 4)
+    b.pairs = vec![(0, 2), (1, 9)];
+    let bytes = write(&b);
+    let d = Dls::parse(&bytes).unwrap();
+    assert_eq!((d.partner(0), d.partner(1)), (None, None));
+    let mut b = paired();
+    b.waves[2].samples.pop(); // length differs
+    assert_eq!(Dls::parse(&write(&b)).unwrap().partner(0), None);
+}
+
+/// A bank without pairs has no `stpr` list: existing output stays byte-identical.
+#[test]
+fn no_pairs_no_chunk() {
+    let bytes = write(&desc());
+    assert!(!bytes.windows(4).any(|w| w == b"stpr"));
 }

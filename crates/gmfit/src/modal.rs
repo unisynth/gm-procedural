@@ -322,7 +322,7 @@ fn relevel_hits(i: usize, orig: &[f32], rate: f32, p: &mut Params, k: usize, bas
             .fold(0.0f32, f32::max)
     };
     for _ in 0..3 {
-        let y = gmgen::render_wave(i, p);
+        let y = crate::render_wave(i, p);
         let rows = p.layers[k].tables[1].len() / 2;
         for r in 0..rows {
             let a = base + (p.layers[k].tables[1][2 * r] * rate) as usize;
@@ -349,7 +349,7 @@ fn relevel(i: usize, orig: &[f32], rate: f32, p: &mut Params, k: usize, t0: usiz
     }
     let start: Vec<f32> = p.layers[k].tables[0].chunks(4).map(|r| r[1]).collect();
     for _ in 0..2 {
-        let y = gmgen::render_wave(i, p);
+        let y = crate::render_wave(i, p);
         let rows = p.layers[k].tables[0].len() / 4;
         for r in 0..rows {
             let f = p.layers[k].tables[0][4 * r];
@@ -370,7 +370,7 @@ fn set_click(i: usize, orig: &[f32], rate: f32, p: &mut Params, k: usize, range:
         return;
     }
     p.layers[k].set("click_db", -80.0);
-    let y = gmgen::render_wave(i, p);
+    let y = crate::render_wave(i, p);
     let (po, py) = (avg_power(&orig[range.clone()]), avg_power(&y[range.clone()]));
     let res: Vec<f32> = po.iter().zip(&py).map(|(a, b)| (a - b).max(0.0)).collect();
     let tot: f32 = res.iter().sum();
@@ -402,7 +402,7 @@ fn set_click(i: usize, orig: &[f32], rate: f32, p: &mut Params, k: usize, range:
     solo.layers = vec![p.layers[k].clone()];
     solo.layers[0].tables[0].clear();
     solo.layers[0].set("click_db", 0.0);
-    let z = gmgen::render_wave(i, &solo);
+    let z = crate::render_wave(i, &solo);
     let ez: f32 = z[range.clone()].iter().map(|v| v * v).sum();
     let er: f32 = orig[range.clone()].iter().map(|v| v * v).sum::<f32>() - y[range.clone()].iter().map(|v| v * v).sum::<f32>();
     if ez > 1e-12 && er > 0.0 {
@@ -417,7 +417,7 @@ fn add_residual(i: usize, orig: &[f32], rate: f32, p: &mut Params, region: Regio
     if p.layers.len() >= gmgen::schema::MAX_LAYERS || range.len() < 64 {
         return;
     }
-    let y = gmgen::render_wave(i, p);
+    let y = crate::render_wave(i, p);
     let (po, py) = (avg_power(&orig[range.clone()]), avg_power(&y[range.clone()]));
     let res: Vec<f32> = po.iter().zip(&py).map(|(a, b)| (a - b).max(0.0)).collect();
     let (tr, to) = (res.iter().sum::<f32>(), po.iter().sum::<f32>());

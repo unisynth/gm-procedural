@@ -535,7 +535,23 @@ pub fn pipeline(orig: &[f32], i: usize, iters: usize, rounds: usize, seed: u64) 
     }
 }
 
-/// analyze → fit → correct_all → refine from the analysed `p`; the best seen with its objective.
+/// Looped waves: `inharm` and `pdecay` of additive sustain layers zeroed together. Both keep moving the partials
+/// past the loop start (off the loop's harmonic bins, and darker), and a fit can settle where neither alone helps
+/// (plus wave 240, Fingered Bass: d_loop 2.74 → 0.96). Returns the candidate with its objective; the caller keeps it
+/// only when better.
+pub fn loop_reset(orig: &[f32], i: usize, p: &Params) -> (Params, f32) {
+    let mut q = p.clone();
+    if crate::meta(i).is_some_and(|m| m.looped.is_some()) {
+        for l in q.layers.iter_mut().filter(|l| l.region == Region::Sustain && FAMILIES[l.family].name == "additive") {
+            l.set("inharm", 0.0);
+            l.set("pdecay", 0.0);
+        }
+    }
+    let s = score_of(orig, i, &q);
+    (q, s)
+}
+
+/// analyze → fit → correct_all → loop_reset → refine from the analysed `p`; the best seen with its objective.
 fn pipeline_from(orig: &[f32], i: usize, p: Params, iters: usize, rounds: usize, seed: u64) -> (Params, f32) {
     let mut best = (p.clone(), score_of(orig, i, &p));
     let (p, s) = fit(orig, i, &best.0, iters, seed, None);
@@ -546,9 +562,18 @@ fn pipeline_from(orig: &[f32], i: usize, p: Params, iters: usize, rounds: usize,
     if s > best.1 {
         best = (p, s);
     }
-    let (p, s) = refine(orig, i, &best.0, rounds, iters / 2, seed + 1);
-    if s > best.1 {
-        best = (p, s);
+    // The reset candidate is usually worse at first (the other parameters adapted to the trap), so it gets its own
+    // refine; the better of the two refines wins.
+    let reset = loop_reset(orig, i, &best.0);
+    if std::env::var_os("GMFIT_TRACE").is_some() {
+        eprintln!("pipeline {i}: after correct {:.4}, loop_reset {:.4}", best.1, reset.1);
+    }
+    let changed = reset.0.layers != best.0.layers;
+    for start in [Some(best.0.clone()), changed.then_some(reset.0)].into_iter().flatten() {
+        let (p, s) = refine(orig, i, &start, rounds, iters / 2, seed + 1);
+        if s > best.1 {
+            best = (p, s);
+        }
     }
     best
 }
@@ -576,6 +601,26 @@ mod tests {
         let before = score_of(&orig, i, &wrong);
         let (p, after) = correct(&orig, i, &wrong);
         assert!(!p.correction.is_empty());
+        assert!(after > before + 0.05, "{before} → {after}");
+    }
+
+    /// A looped sustain trapped by `inharm` + `pdecay` together (each alone barely moves the score; wave 240 of the
+    /// plus set, change add-gmplus-bank): `loop_reset` zeroes both at once and keeps the better result.
+    #[test]
+    fn loop_reset_escapes_the_inharm_pdecay_trap() {
+        let i = 289;
+        let mut l = Layer::new(family("additive").unwrap(), Region::Sustain);
+        l.set("level_db", -12.0);
+        l.tables[0] = vec![0.0, -3.0, -14.0, -22.0, -22.0, -30.0, -40.0, -45.0];
+        let mut target = Params::default();
+        target.layers.push(l.clone());
+        let orig = crate::render_wave(i, &target);
+        l.set("inharm", 0.0064);
+        l.set("pdecay", 0.39);
+        let mut trapped = Params::default();
+        trapped.layers.push(l);
+        let before = score_of(&orig, i, &trapped);
+        let (_, after) = loop_reset(&orig, i, &trapped);
         assert!(after > before + 0.05, "{before} → {after}");
     }
 }

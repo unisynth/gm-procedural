@@ -848,7 +848,13 @@ pub fn analyze_alts(i: usize, orig: &[f32], m: &WaveMeta, alts: &mut Vec<(f32, P
             // Struck / plucked strings: a free-running stiff-string attack layer (stretched partials, faster decay
             // of the upper ones) hands over to the exactly periodic sustain layer at the loop.
             let stringy = matches!(prior.kind, Kind::Plucked) || (matches!(prior.kind, Kind::Struck(_)) && prior.inharm > 0.0);
+            // Plus set: a loop after a long baked attack (up to 1 s of mod-envelope motion) would leave the
+            // free-running string layer alone for the whole first second, and its hand-over at the loop is heard as a
+            // break mid-note (plus 240, 293). Late loops take the generic path (sustain from the start, short attack
+            // layer) instead. The gm.dls set keeps its hand-over wherever its loop starts.
+            let late = crate::set() == crate::Set::Plus && s > (HANDOVER_MAX_S * rate) as usize;
             if stringy
+                && !late
                 && s > (0.05 * rate) as usize
                 && p.layers.iter().all(|x| x.region != Region::Attack)
                 && let Some(mut a) = string_attack(orig, rate, s, f0)
@@ -1278,6 +1284,9 @@ fn string_attack(x: &[f32], rate: f32, s: usize, f0: f32) -> Option<Layer> {
     l.set("tail", -48.0);
     Some(l)
 }
+
+/// Plus set: latest loop start (s) for the string-attack hand-over (see `late` in `analyze_alts`).
+const HANDOVER_MAX_S: f32 = 0.3;
 
 /// A transient layer of family `f` from the wave's onset (`until` = end of the analysed part).
 pub(crate) fn attack_layer(f: &str, prior: &Prior, x: &[f32], rate: f32, region: Region, until: usize) -> Layer {

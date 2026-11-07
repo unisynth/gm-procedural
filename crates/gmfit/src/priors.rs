@@ -177,7 +177,7 @@ mod tests {
             assert!(gmgen::schema::family(f).is_some(), "program {prog} → {f}");
         }
         // Every key used by the 9 kits of the bank.
-        let bank = gmgen::bank::skeleton();
+        let bank = crate::skeleton();
         for ins in bank.instruments.iter().filter(|i| i.drums) {
             for r in &ins.regions {
                 for key in r.key_lo..=r.key_hi.min(127) {

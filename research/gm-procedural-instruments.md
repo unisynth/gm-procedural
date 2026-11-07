@@ -263,3 +263,85 @@ Puckette, *Theory and Techniques*, §4 (Risset's bell); Euphonics 3.3; Rochester
    - easy: 808/electronic kit, organs, synth leads/pads, flutes/whistle, mallets
    - medium: bass, guitars, brass, reeds, timpani, toms, cymbals
    - hard: acoustic piano attack, choir, nylon guitar, sax, applause, seashore
+
+## 4. Where the bank's quality lives, and better reference sets (2026-11-04)
+
+### What the web says about gm.dls quality
+
+- **Provenance.** gm.dls is Roland's Sound Canvas set, licensed to Microsoft in 1996 (version "960920 ver. 1.00.16").
+  It is a cut-down Virtual Sound Canvas (VSC): 3.28 MB, 495 samples, 235 instruments, no reverb or chorus. Some
+  instruments are worse than the VSC, and most are well below the SC-55 hardware. Its strength is balance: the levels
+  are even across the set, which is why MIDIs balanced for gm.dls still sound right on it
+  (gmsynths.blogspot.com/2014/06/ms-synth-is-it-really-that-bad.html; midis.fandom.com/wiki/Microsoft_GS_Wavetable_Synth).
+- **Per-instrument opinions.** No published per-instrument ranking exists.
+  - Synth Strings, Sweep Pad and Halo Pad are called "nowhere near" the SC-55 hardware.
+  - The "cheesy/ghostly" Choir Aahs is liked and preferred to the SC-55's more realistic choir for some MIDIs.
+  - The GS variation banks hold sounds most users never hear (Jon Lervold, *Exploring Sounds Beyond the Main Bank*,
+    jonlervold.com, 2020).
+- **Demoscene usage.** In 4k intros the samples are the standard "crappy but free" trick (iq, Hugi 34,
+  iquilezles.org/articles/gmdlsgfx). They become usable once reverb and EQ are added, for example after WaveSabre
+  Adultery (scrapbox.io/0b5vr/WaveSabre:_Adultery). xplsv's GmDlsTool (pouet 30541) lists each sample's file offset.
+
+### Measured: how much sample data each instrument has (`assets/gm/structure.json`)
+
+The sample rate does not tell the instruments apart: 492 of the 495 waves are 22 050 Hz and 3 are 24 000 Hz
+(Applause among them). What does tell them apart is how much sample data each instrument has and how many keyboard
+zones (regions) it is split into. The table covers the GM main bank (bank 0/0, melodic) and sums the unique waves of
+each instrument.
+
+| Most data | s | zones | Least data (single-cycle loops) | s | zones |
+|---|---|---|---|---|---|
+| Piano 1/2/3 (all three use the same waves 289–298) | 4.18 | 10 | Tinkle Bell | 0.01 | 8 |
+| Saw Wave | 2.16 | 5 | Harmonica | 0.02 | 6 |
+| Square Wave | 1.72 | 6 | Reed Organ | 0.02 | 5 |
+| Synth Brass 1 | 1.66 | 6 | Glockenspiel | 0.04 | 3 |
+| Jazz Gt. | 1.53 | 7 | Organ 1 | 0.04 | 3 |
+| Steel-str. Gt. | 1.46 | 7 | Clarinet | 0.05 | 6 |
+| Syn.Strings 1/2, Sweep Pad | 1.43 | 3 | Celesta | 0.05 | 3 |
+| Strings, Slow Strings, Tremolo Str | 1.31 | 3 | Tubular Bells | 0.05 | 3 |
+| Fretless Bs., Picked Bs. | 1.31 | 6 | Music Box | 0.06 | 4 |
+| Halo Pad, Echo Drops | 1.30 | 3 | Clav. | 0.07 | 5 |
+| Brass 1 | 1.21 | 4 | Bassoon, Bandoneon | 0.07 | 5 |
+| Polysynth | 1.15 | 5 | Sitar, Santur, Xylophone | 0.08–0.09 | 3–4 |
+
+Mid-range instruments with many zones: Overdrive Gt. (10 zones, 0.94 s), Trombone and Trumpet (10 zones,
+0.6–0.7 s), Tuba (9 zones) and Violin/Viola (9 zones, 0.42 s). Choir Aahs has 1.0 s but only 2 unique waves.
+
+The other 98 non-drum instruments are GS variations (Piano 1d, 60's E.Piano, Choir Aahs 2, Orchestra, AnalogBrass
+1/2, Sine Wave, Echo Pan, the bank 1–9 sound effects). They mostly reuse main-bank waves with a different
+articulation.
+
+### Reference sets better than gm.dls (for A/B listening and as fit targets)
+
+| Set | What it is | Licence / use |
+|---|---|---|
+| ACCURATE gm.dls sf2 (musical-artifacts 5190) | Faithful DLS→SF2 conversion of gm.dls with correct volumes, envelopes, vibrato and modulators, made with spessasus.github.io/dls-to-sf2 | Roland samples; reference only |
+| gm.dls REMASTERED v2 (musical-artifacts 1549) | The same instruments built from higher-quality copies of the samples, stereo, some new multisamples | Roland samples; reference only |
+| gmplus (Doomworld topic 152752) | Fork of an SC-55 font that keeps gm.dls's quirks (melodic percussion, non-SC-55 instruments) at closer to Sound Canvas quality | fan-made; reference only |
+
+**gmplus measured (Release 1, `gmplus.sf2`, 6.9 MB, Drive id `1jzvrDNv5a6uuXZnusm-JNWGZ8pvwsqwZ`, kept locally in
+`~/Downloads/64k-tools/gmplus/`):**
+
+- It has 235 presets, the same programs and bank variations as gm.dls, so each gm.dls instrument maps to one preset.
+- It has 398 samples, all mono with no stereo links. 370 of them are 32 kHz, 13 are 44.1 kHz, 9 are 22.05 kHz and
+  6 are 48 kHz.
+- Its samples total 106 s, against gm.dls's 495 waves at 22.05 kHz.
+- Sources: Trevor0402's SC-55 MkII ROM font, plus new SCVA and R8 recordings for the gm.dls-specific instruments
+  (later SC samples such as Steel Gt., Fingered and Picked Bass, and the SC-88 Applause 2). The mod envelopes are
+  referenced against Nuked-SC55.
+- Its SF2.1 modulators only map velocity to filter cutoff.
+- The readme warns that some of Trevor's samples have DC offset, which causes slight detuning and clicks.
+- `gmex.sf2` is the same font with the sound effects mapped to scaled pitches.
+| SC-55 sf2 fonts (scc1t2.sf2 and others), Nuked SC-55 emulator | The hardware sound that gm.dls is a cut-down copy of | not licensed for released music |
+| GeneralUser GS (32 MB), FluidR3 GM / MuseScore General (MIT), TimGM6mb (6 MB, GPL-2) | Clean GM/GS banks with their own sound, not gm.dls's | free; usable as targets |
+
+### Consequences
+
+- **Where fitting pays off most:** piano, strings and pads, guitars, basses, brass and the many-zone wind
+  instruments. They hold most of the bank's data and are the most exposed in a mix.
+- **Single-cycle instruments** (right column above) are nearly free to reproduce exactly. Their richness comes from
+  the articulation, not the wave.
+- **The procedural bank is not tied to gm.dls's quality.** The ACCURATE sf2 is the right reference for how the
+  original should play back. To go beyond the original, fit against a higher-quality set, but only a freely licensed
+  one (GeneralUser GS, FluidR3, MuseScore General). The REMASTERED, gmplus and SC-55 sets contain Roland samples, so
+  use them only for listening.

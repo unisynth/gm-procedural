@@ -159,6 +159,7 @@ mod pack_and_json {
             waves: (0..2)
                 .map(|_| WaveData { rate: 22050, wsmp: Wsmp { unity_note: 60, ..Default::default() }, samples: vec![0; 100] })
                 .collect(),
+            pairs: vec![],
         };
         std::fs::write(dir.join("structure.json"), crate::structure::to_json(&bank)).unwrap();
         for (file, text) in waves {
@@ -555,4 +556,18 @@ fn formant_peaks_syllables_and_loop() {
         let mid = env[k + 10];
         assert!(mid < 0.1 * near, "not quiet after the syllable at {t} s");
     }
+}
+
+/// `structure.json` keeps stereo pairs (change add-gmplus-bank 4.2) and omits the key without them.
+#[test]
+fn structure_pairs_round_trip() {
+    use dls::write::{Bank, WaveData};
+    let w = WaveData { rate: 32000, wsmp: dls::Wsmp { unity_note: 60, ..Default::default() }, samples: vec![0; 10] };
+    let mut b = Bank { instruments: vec![], waves: vec![w.clone(), w], pairs: vec![] };
+    assert!(!crate::structure::to_json(&b).contains("pairs"));
+    b.pairs = vec![(0, 1)];
+    let back = crate::structure::from_json(&crate::structure::to_json(&b)).unwrap();
+    assert_eq!(back.pairs, vec![(0, 1)]);
+    b.pairs = vec![(0, 5)];
+    assert!(crate::structure::from_json(&crate::structure::to_json(&b)).is_err());
 }
