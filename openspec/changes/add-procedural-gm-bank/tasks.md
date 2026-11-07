@@ -193,6 +193,8 @@ explaining the limit.
 - [ ] 8.6 Piano (36) and chromatic percussion (19)
 - [ ] 8.7 Ethnic (31), percussive (9), SFX (10) and any remaining waves. Verify that no placeholder parameters remain
   (`gmfit report` shows 0 waves with the placeholder flag).
+  Ethnic first pass (`bulk --cat ethnic`: 20 waves in the category): 20/20 written, `ks` attacks in 11; tier C left:
+  Banjo 45 0.24, 46 0.48, Shamisen 355 0.43, 356 0.22. Report A 11, B 62, C 422, placeholders 286, mean 0.286.
 
 ## 9. Runtime integration
 
