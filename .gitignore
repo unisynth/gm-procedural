@@ -9,3 +9,10 @@ build/
 *.wav
 *.mp3
 site/assets/*.wasm
+# pi kb index (local, regenerated)
+.pi/dashboard/kb/
+.pi/**/*.sqlite
+.pi/**/*.sqlite-*
+.pi/**/*.db
+.pi/**/*.db-*
+context-budget.json

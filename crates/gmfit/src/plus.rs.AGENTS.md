@@ -1,0 +1,9 @@
+# plus.rs
+
+gmplus targets (change add-gmplus-bank, D2). For each gm.dls wave, the sample of the gmplus zone that plays the wave's key (`main_user`): DC-blocked, through the zone's static low-pass, resampled to 32 kHz (`RATE`) so that played by the gm.dls region at that key it sounds as gmplus does, with an integer loop (whole source loops, residual pitch error → fine tune), level-matched to the gm.dls wave. Waves without a gmplus zone fall back to the gm.dls wave at 32 kHz. `assets/gm-plus/map.json` records every choice (no audio).
+
+- `Targets::{load (GMPLUS_SF2), wave, write_map, structure}` → `Target{samples, looped, fine_delta, wsmp_gain_db, row}`; `Target::meta`. Mod-env pitch/filter baked ≤ 1 s (`MAX_FREEZE`), integer loop of whole source loops, A-weighted level match (`aw_rms`), peak `PEAK` 0.85 → wsmp gain; `GAIN_UNITS_PER_DB` 655360; `VELOCITY` 100; `MAX_ONESHOT_SECS` 3; `MAX_LOOP` 16384.
+- `render` sums every zone (att ×0.4, gains vs loudest): primary sets loop, others lock ≤ 1 ct or crossfade; level = loudest 100 ms of first 1 s; `MAX_PERIODS` 256. See change: add-gmplus-bank 3.2–3.3.
+- Stereo (D4, 4.2–4.3): `Targets::stereo()` = waves whose zones' pans differ (> 1 unit; 60), `GM_WAVES` 495, partner of `stereo[k]` = 495+k (`left_of`, `total()`); `side()` + `pan_gains` (equal power) render L/R on one timeline, one gain from the louder channel; `Target::right`; map rows `stereo.partner` / `left`; `structure()` appends partners + `pairs`.
+- `structure()` = plus `structure.json` (32 kHz, target loops, fine + `fine_delta`, gain + `wsmp_gain`; regions alike). See change: add-gmplus-bank 1.1–1.4, 2.1–2.4.
+- Tests: loop integer/periodic, one-shot length capped, mod-env shape, filter sweep freezes into exact loop, pitch envelope bends attack, missing soundfont names the variable, octave layer locks and sums, detuned layer crossfades, high-step loop keeps level, looped DC = loop mean, panned zones make two channels.

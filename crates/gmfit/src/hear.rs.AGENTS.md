@@ -1,0 +1,8 @@
+# hear.rs
+
+Hearing-model difference (design D4p): what of the difference between original and copy a listener hears. Ear model after PEAQ (ITU-R BS.1387) / MPEG psychoacoustics, compared in the excitation domain (`excitation` → `Ear`): Terhardt outer/middle-ear weighting, half-Bark bands, spreading (lower 27 dB/Bark, upper 24 + 230/f − 0.2·L), threshold in quiet as internal noise, forward masking (τ 8–30 ms), Zwicker specific loudness. See change: add-procedural-gm-bank D4p.
+
+- `hear(orig, copy, rate)` → `Heard` {added, missing (loudness above/below the original by > 3 dB JND + 1.4 × orig's own fluctuation, median 100 ms; share of original loudness; independent same-texture noise ≤ 0.05), `added_at`/`missing_at` (Hz, ms from/to, share), flutter, moddiff (PEAQ ModDiff, copy − orig), swell (envelope spectrum 2–20 Hz), `flutter_at`, rough, ring}. Aligned on first 150 ms (`ATTACK_S`) then per-band level distributions (`DIST_TOL`). `Heard::json`, `verdict`.
+- `AUDIBLE` 0.05, `MOD_AUDIBLE` 0.02, `ROUGH_AUDIBLE` 1.0 (dB), `RING_AUDIBLE` 0.3. Calibrated with same-texture noise surrogates (max added + missing 0.047, |moddiff| 0.017).
+- `roughness` (2 ms envelope deviation); `ring_diff` (loops, octaves, via `shaker::bands`); `listen(orig, synth, meta, speed, pitched)` = played + `at_speed` (band-limited resample) + ring (unpitched loops only); heard record = 5 values `[added, missing, moddiff, rough, ring]` used by `lib::hear_excess`/`HEAR_PENALTY` in `rank`, `rank_json`, `fit::score_of`. Env `GMFIT_RING_TRACE`.
+- Command `hear <w> [-p f]`. Tests: resample keeps pitch ratio/level, identical silent, same-texture noise below floor, texture heard by statistics not grain times, roughness sees blurred strikes, missing tone found where it is.

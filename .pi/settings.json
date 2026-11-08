@@ -1,0 +1,12 @@
+{
+  "flows": {
+    "editFlow": false
+  },
+  "worktreeInit": {
+    "gate": "test ! -d node_modules || test ! -d target",
+    "run": {
+      "type": "script",
+      "command": "pnpm install --frozen-lockfile && cargo fetch"
+    }
+  }
+}
