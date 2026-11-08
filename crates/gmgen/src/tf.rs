@@ -50,8 +50,18 @@ pub fn rows_for(secs: f32) -> usize {
     (TIMES.iter().filter(|t| **t < secs).count() + 1).min(TIMES.len())
 }
 
-/// Per-bin linear gain at time `t` for an `nbins`-bin half spectrum (bin k ↔ k·rate/size).
-fn gains(tf: &[f32], t: f32, size: usize, rate: f32) -> Vec<f32> {
+/// Band position (index, weight) of every bin of a `size`-point half spectrum (bin k ↔ k·rate/size).
+fn bin_pos(size: usize, rate: f32) -> Vec<(usize, f32)> {
+    (0..=size / 2)
+        .map(|k| {
+            let p = band_pos(k as f32 * rate / size as f32);
+            (p as usize, p - p as usize as f32)
+        })
+        .collect()
+}
+
+/// Per-bin linear gain at time `t`, the bins' band positions precomputed (`bin_pos`).
+fn gains_at(tf: &[f32], t: f32, pos: &[(usize, f32)]) -> Vec<f32> {
     let rows = tf.len() / BANDS;
     let r = row_pos(t, rows);
     let (j, w) = (r as usize, r - r as usize as f32);
@@ -62,10 +72,8 @@ fn gains(tf: &[f32], t: f32, size: usize, rate: f32) -> Vec<f32> {
             a + (c - a) * w
         })
         .collect();
-    (0..=size / 2)
-        .map(|k| {
-            let p = band_pos(k as f32 * rate / size as f32);
-            let (i, w) = (p as usize, p - p as usize as f32);
+    pos.iter()
+        .map(|&(i, w)| {
             let a = row[i];
             let c = row[(i + 1).min(BANDS - 1)];
             db(a + (c - a) * w)
@@ -73,8 +81,19 @@ fn gains(tf: &[f32], t: f32, size: usize, rate: f32) -> Vec<f32> {
         .collect()
 }
 
+/// cos/sin(2π·j/N), j < N/2: every twiddle of an N-point radix-2 FFT (k/len = k·(N/len)/N exactly: powers of two).
+fn twiddles() -> Vec<(f32, f32)> {
+    (0..N / 2).map(|j| (cos_cycles(j as f32 / N as f32), sin_cycles(j as f32 / N as f32))).collect()
+}
+
 /// In-place radix-2 complex FFT (`inverse` unscaled). `re.len()` is a power of two.
+#[cfg(test)]
 fn fft(re: &mut [f32], im: &mut [f32], inverse: bool) {
+    fft_tw(re, im, inverse, &twiddles())
+}
+
+/// `fft` of N points with the twiddle table (`twiddles`; identical values, computed once).
+fn fft_tw(re: &mut [f32], im: &mut [f32], inverse: bool, tw: &[(f32, f32)]) {
     let n = re.len();
     let mut j = 0;
     for i in 1..n {
@@ -94,7 +113,8 @@ fn fft(re: &mut [f32], im: &mut [f32], inverse: bool) {
     while len <= n {
         let half = len / 2;
         for k in 0..half {
-            let (c, s) = (cos_cycles(k as f32 / len as f32), sign * sin_cycles(k as f32 / len as f32));
+            let (c, s) = tw[k * (N / len)];
+            let s = sign * s;
             let mut i = k;
             while i < n {
                 let (ar, ai) = (re[i + half], im[i + half]);
@@ -116,17 +136,18 @@ fn hann(k: usize) -> f32 {
 
 /// STFT frames over `x` padded by N on both sides: `(frame start in x (may be negative), re, im)`.
 fn frames(x: &[f32]) -> Vec<(isize, Vec<f32>, Vec<f32>)> {
+    let (win, tw): (Vec<f32>, _) = ((0..N).map(hann).collect(), twiddles());
     let mut out = Vec::new();
     let mut p = -(N as isize);
     while p < x.len() as isize {
         let mut re: Vec<f32> = (0..N)
             .map(|k| {
                 let i = p + k as isize;
-                if i >= 0 && (i as usize) < x.len() { x[i as usize] * hann(k) } else { 0.0 }
+                if i >= 0 && (i as usize) < x.len() { x[i as usize] * win[k] } else { 0.0 }
             })
             .collect();
         let mut im = vec![0.0f32; N];
-        fft(&mut re, &mut im, false);
+        fft_tw(&mut re, &mut im, false, &tw);
         out.push((p, re, im));
         p += HOP as isize;
     }
@@ -144,9 +165,10 @@ pub fn apply(x: &mut [f32], lp: Option<(usize, usize)>, rate: f32, tf: &[f32]) {
         // Reach past the loop start so frames there see the signal continuing.
         let src_ext = &orig[..(attack_end + N).min(orig.len())];
         let mut acc = vec![0.0f32; src_ext.len()];
+        let (pos, win, tw): (_, Vec<f32>, _) = (bin_pos(N, rate), (0..N).map(hann).collect(), twiddles());
         for (p, mut re, mut im) in frames(src_ext) {
             let c = (p + N as isize / 2).max(0) as usize;
-            let mut g = gains(tf, c as f32 / rate, N, rate);
+            let mut g = gains_at(tf, c as f32 / rate, &pos);
             if lp.is_some() {
                 // Fade to unity over the last 10 ms before the loop start (fully unity from it on).
                 let f = (0.01 * rate) as usize;
@@ -158,12 +180,12 @@ pub fn apply(x: &mut [f32], lp: Option<(usize, usize)>, rate: f32, tf: &[f32]) {
                 *r *= gk;
                 *i *= gk;
             }
-            fft(&mut re, &mut im, true);
+            fft_tw(&mut re, &mut im, true, &tw);
             for (k, v) in re.iter().enumerate() {
                 let i = p + k as isize;
                 if i >= 0 && (i as usize) < acc.len() {
                     // Hann analysis + Hann synthesis at hop N/4 sums to 1.5·N (unscaled inverse).
-                    acc[i as usize] += v * hann(k) / (1.5 * N as f32);
+                    acc[i as usize] += v * win[k] / (1.5 * N as f32);
                 }
             }
         }

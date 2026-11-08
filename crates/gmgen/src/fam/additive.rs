@@ -9,6 +9,7 @@
 use crate::math::{db, exp, log2, sin_cycles, sqrt};
 use crate::params::Layer;
 use crate::render::{layer_env, Ctx, Phasor};
+use crate::schema::Region;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -97,6 +98,14 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         Some(_) => ctx.lp.map_or(n, |(s, _)| s),
         None => n,
     };
+    // Frozen sustain (amplitude held from the loop start, no phase or loudness modulation): every component sits on
+    // bin n of the L-point loop grid, so samples ≥ the loop start are one inverse DFT of the components, repeated —
+    // one FFT instead of a sine per component per sample (design D9), periodic by construction.
+    let frozen_fft = match (ctx.region, ctx.lp) {
+        (Region::Sustain, Some((_, l))) => ctx.den as usize == l && scoop.is_empty() && vib.is_empty() && am.is_empty() && l >= 16,
+        _ => false,
+    };
+    let (mut fre, mut fim) = if frozen_fft { (vec![0.0f32; ctx.den as usize], vec![0.0f32; ctx.den as usize]) } else { (Vec::new(), Vec::new()) };
     for k in 1..=MAX_PARTIALS {
         let kf = k as f32;
         let a_db = match harm.get(k - 1) {
@@ -202,7 +211,45 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
             let fr = ctx.hz(nk);
 
             let mut ph = Phasor::new(nk, ctx.den);
-            for (i, o) in out.iter_mut().enumerate() {
+            // Frozen part by FFT: a·sin(2π(n·i/L + φ)) = Im(a·e^{2πiφ}·e^{2πi·n·i/L}) → coefficient at bin n.
+            let direct_end = if frozen_fft && hm.is_empty() {
+                let phi = (if sides.is_empty() { ph0 } else { 0.0 }) + wph;
+                let a = wamp * amp[steps - 1];
+                fre[nk as usize] += a * crate::math::cos_cycles(phi);
+                fim[nk as usize] += a * crate::math::sin_cycles(phi);
+                hold.min(n)
+            } else {
+                n
+            };
+            // No phase modulation: a complex rotator, resynced to the exact phasor phase every 64 samples (drift
+            // ≲ 1e-6; the loop region is the FFT's), instead of a sine per sample.
+            if scoop.is_empty() && (vib.is_empty() || !sides.is_empty()) {
+                let off = (if sides.is_empty() { ph0 } else { 0.0 }) + wph;
+                let step = nk as f32 / ctx.den as f32;
+                let (dc, ds) = (crate::math::cos_cycles(step), sin_cycles(step));
+                let (mut rc, mut rs) = (0.0f32, 0.0f32);
+                for (i, o) in out.iter_mut().enumerate().take(direct_end) {
+                    let p = ph.tick();
+                    if i % 64 == 0 {
+                        rc = crate::math::cos_cycles(p + off);
+                        rs = sin_cycles(p + off);
+                    }
+                    let a = if i >= hold {
+                        amp[steps - 1]
+                    } else {
+                        let (j, w) = (i / CR, (i % CR) as f32 / CR as f32);
+                        amp[j] + (amp[j + 1] - amp[j]) * w
+                    };
+                    let a = if am.is_empty() || !sides.is_empty() { a } else { a * am[i] };
+                    let a = if hm.is_empty() { a } else { a * hm[i] };
+                    *o += wamp * a * rs;
+                    let r = rc * dc - rs * ds;
+                    rs = rs * dc + rc * ds;
+                    rc = r;
+                }
+                continue;
+            }
+            for (i, o) in out.iter_mut().enumerate().take(direct_end) {
                 let mut c = ph.tick() + if sides.is_empty() { ph0 } else { 0.0 } + wph;
                 if !scoop.is_empty() {
                     c += fr * scoop[i];
@@ -221,5 +268,52 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
                 *o += wamp * a * sin_cycles(c);
             }
         }
+    }
+    if frozen_fft && fre.iter().chain(&fim).any(|v| *v != 0.0) {
+        let l = fre.len();
+        crate::correct::fft::fft(&mut fre, &mut fim, true);
+        for (i, o) in out.iter_mut().enumerate().skip(hold.min(n)) {
+            *o += fim[i % l];
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::params::{Layer, Params};
+    use crate::render::{render, WaveMeta};
+    use crate::schema::{family, Region};
+
+    /// The frozen sustain by FFT (design D9) equals the direct per-sample sum: the same layer with a negligible
+    /// loudness modulation (≈ 1e-7, forces the direct path) differs by < 1e-4 of the peak, and the FFT render loops
+    /// exactly.
+    #[test]
+    fn frozen_sustain_fft_matches_direct() {
+        let m = WaveMeta { rate: 22050, len: 9000, unity: 48, fine: 0, looped: Some((2000, 7000)) };
+        let mk = |am: f32| {
+            let mut l = Layer::new(family("additive").unwrap(), Region::Sustain);
+            l.set("level_db", -12.0);
+            l.set("spread", 30.0);
+            l.set("a", 0.05);
+            l.set("d", 0.2);
+            l.set("s", 0.6);
+            l.tables[0] = vec![0.0, -3.0, -6.0, -4.0, -12.0, -9.0, -15.0, -20.0];
+            if am > 0.0 {
+                l.set("vib_rate", 5.0);
+                l.set("am_db", am);
+            }
+            let mut p = Params::default();
+            p.layers.push(l);
+            render(&m, &p, 3)
+        };
+        let (fast, direct) = (mk(0.0), mk(1e-5));
+        let peak = direct.iter().map(|v| v.abs()).fold(0.0, f32::max);
+        let err = fast.iter().zip(&direct).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
+        assert!(peak > 0.01 && err < 1e-4 * peak, "err {err} peak {peak}");
+        // Loop exact: the last loop sample is followed by the loop's first one.
+        let (first, last) = (fast[2000], fast[8999]);
+        let step = (first - last).abs();
+        let typical = (2001..8999).map(|i| (fast[i] - fast[i - 1]).abs()).fold(0.0, f32::max);
+        assert!(step <= typical, "wrap step {step} vs largest step {typical}");
     }
 }

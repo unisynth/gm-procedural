@@ -49,6 +49,59 @@ impl Hit {
         }
         alive.then_some(y * att)
     }
+    /// Adds `g`× this hit's response (no click) to `out[i0..end)`. Without a trill each mode is a decaying sinusoid
+    /// once the glide has settled (14 glide time constants): a rotator scaled by the per-sample decay, resynced to the
+    /// exact warped phase every 64 samples (design D9, drift ≲ 1e-6), instead of an `exp` and a `sin` per mode per
+    /// sample; exact per sample while gliding. A trill takes `at` per sample.
+    fn add_into(&self, out: &mut [f32], i0: usize, end: usize, g: f32, rate: f32) {
+        if self.tr > 0.0 {
+            for (i, o) in out.iter_mut().enumerate().take(end).skip(i0) {
+                match self.at((i - i0) as f32 / rate) {
+                    Some(v) => *o += g * v,
+                    None => break,
+                }
+            }
+            return;
+        }
+        let len = end.saturating_sub(i0);
+        let mut y = vec![0.0f32; len];
+        let warp = |tau: f32| if self.r == 1.0 { tau } else { tau + (self.r - 1.0) * self.gt * (1.0 - exp(-tau / self.gt)) };
+        let settle = if self.r == 1.0 { 0 } else { ((14.0 * self.gt * rate) as usize).min(len) };
+        for m in &self.modes {
+            for (k, v) in y.iter_mut().enumerate().take(settle) {
+                let tau = k as f32 / rate;
+                let gm = exp(-tau / m[2]);
+                if gm >= 1e-5 {
+                    *v += m[1] * gm * sin_cycles(m[0] * warp(tau) + m[3]);
+                }
+            }
+            let (dc, ds) = (crate::math::cos_cycles(m[0] / rate), sin_cycles(m[0] / rate));
+            let d = exp(-1.0 / (m[2] * rate));
+            let (mut rc, mut rs, mut gm) = (0.0f32, 0.0f32, 0.0f32);
+            for (k, v) in y.iter_mut().enumerate().skip(settle) {
+                if (k - settle) % 64 == 0 {
+                    let tau = k as f32 / rate;
+                    gm = exp(-tau / m[2]);
+                    if gm < 1e-5 {
+                        break;
+                    }
+                    let ph = m[0] * warp(tau) + m[3];
+                    rc = crate::math::cos_cycles(ph);
+                    rs = sin_cycles(ph);
+                }
+                *v += m[1] * gm * rs;
+                let r = rc * dc - rs * ds;
+                rs = rs * dc + rc * ds;
+                rc = r;
+                gm *= d;
+            }
+        }
+        for (k, v) in y.iter().enumerate() {
+            let tau = k as f32 / rate;
+            let att = if self.ha > 0.0 && tau < self.ha { tau / self.ha } else { 1.0 };
+            out[i0 + k] += g * v * att;
+        }
+    }
     /// Adds `g`× this hit's click (band-passed noise burst from `rng`) to `out` starting at sample `i0`.
     fn click_into(&self, out: &mut [f32], i0: usize, g: f32, rate: f32, rng: &mut Rng) {
         if self.click <= 1e-4 {
@@ -127,12 +180,8 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
                 tab.chunks(2).map(|r| (((r[0] * ctx.rate + 0.5) as usize).min(len - 1), db(r[1]))).collect()
             };
             for (i, &(i0, g)) in pattern.iter().enumerate() {
-                for (k, o) in r.iter_mut().enumerate().skip(i0) {
-                    match hit.at((k - i0) as f32 / ctx.rate) {
-                        Some(v) => *o += g * v,
-                        None => break,
-                    }
-                }
+                let end = (i0 + (hit.tail() * ctx.rate) as usize + 1).min(r.len());
+                hit.add_into(&mut r, i0, end, g, ctx.rate);
                 let mut rng = Rng::new(ctx.seed ^ (i as u32 + 1).wrapping_mul(0x9E37_79B9));
                 hit.click_into(&mut r, i0, g, ctx.rate, &mut rng);
             }
@@ -168,17 +217,43 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
                     break;
                 }
                 let end = (i0 + (hit.tail() * ctx.rate) as usize + 1).min(n);
-                for (i, o) in out.iter_mut().enumerate().take(end).skip(i0) {
-                    match hit.at((i - i0) as f32 / ctx.rate) {
-                        Some(v) => *o += g * v,
-                        None => break,
-                    }
-                }
+                hit.add_into(out, i0, end, g, ctx.rate);
                 hit.click_into(out, i0, g, ctx.rate, &mut rng);
             }
         }
     }
     for (i, o) in out.iter_mut().enumerate() {
         *o *= level * layer_env(l, ctx.t(i));
+    }
+}
+
+#[cfg(test)]
+mod fast_tests {
+    use super::Hit;
+
+    /// `add_into` (rotators after the glide settles, design D9) equals `at` per sample within 1e-4 of the peak, on a
+    /// gliding three-mode hit.
+    #[test]
+    fn hit_rotators_match_exact() {
+        let rate = 22050.0;
+        let hit = Hit {
+            modes: vec![[523.0, 1.0, 0.3, 0.1], [1410.0, 0.5, 0.08, 0.7], [3150.0, 0.25, 0.02, 0.3]],
+            r: 1.4,
+            gt: 0.004,
+            ha: 0.002,
+            click: 0.0,
+            cd: 0.001,
+            hp: 20.0,
+            lp: 10000.0,
+            tr: 0.0,
+            td: 0.0,
+        };
+        let n = 20000;
+        let mut fast = vec![0.0f32; n];
+        hit.add_into(&mut fast, 100, n, 0.8, rate);
+        let exact: Vec<f32> = (0..n).map(|i| if i < 100 { 0.0 } else { 0.8 * hit.at((i - 100) as f32 / rate).unwrap_or(0.0) }).collect();
+        let peak = exact.iter().map(|v| v.abs()).fold(0.0, f32::max);
+        let err = fast.iter().zip(&exact).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
+        assert!(peak > 0.1 && err < 1e-4 * peak, "err {err} peak {peak}");
     }
 }
