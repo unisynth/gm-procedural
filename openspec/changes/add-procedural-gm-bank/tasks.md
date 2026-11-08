@@ -162,13 +162,16 @@ skip when `GM_DLS` is unset.
   226 need the FM / formant families (7.6, 7.3), bubble 62 its 1.9 kHz ring.
 - [x] 7.3 Add the `formant` family (pulse/saw source, ≤ 5 formants), with tests for formant peak positions. Check it
   on 2 choir/voice waves. Verify both score above their placeholder score.
-- [ ] 7.4 Add the `subtractive` family (2 oscillators, resonant filter with envelope), with tests for cutoff response.
+- [x] 7.4 Add the `subtractive` family (2 oscillators, resonant filter with envelope), with tests for cutoff response.
   Check it on 3 synth lead/pad/bass waves. Verify all 3 score above their placeholder score.
-  Family + analysis done (`fam/subtractive.rs`, `gmfit/src/subtractive.rs`, `ph2` places a detuned pair's beat).
-  Bulk on the 15 weakest lead/pad/fx waves: only Solo Vox 170 won (0.11 → 0.20). Open: the GM Square Wave 386 is
-  two equal squares one loop-grid bin apart (beat dips −19 dB once per loop); a hand-built pair matches the loop's
-  lines, yet the score keeps d_loop ≈ 19 and the hearing model swings missing 0.61 → added 1.24 over 8 dB — while the
-  bank's modal 386 (score 0.09) already hears identical. Needs listening before more tuning.
+  Done: `fam/subtractive.rs` (tests: biquad response ≤ 1 dB, filter-envelope sweep, exact loop), `ph2` places a
+  detuned pair's beat; analysis `gmfit/src/subtractive.rs` fits waveform/pulse width/cutoff/Q to the loop's harmonic
+  profile by least squares and reads a beating pair inside harmonic 1 (GM Square Wave = two 46.5 % pulses one
+  loop-grid bin apart). Bank (placeholder → now): Solo Vox 170 0.01 → 0.20, lead 210 0.08 → 0.60, Saw lead 328
+  0.13 → 0.59, Square Wave 385 0.01 → 0.19, 386 0.01 → 0.19.
+  Open: the squares' `d_mod` (≈ 1.3) reads instantaneous pitch through the beat nulls; holding/masking the null
+  samples fixes them (+0.16) but reshuffles 333 waves fitted against the old measure (drops to −0.46) — reverted,
+  pending listening (`build/gm/disagree`).
 - [x] 7.5 Add the `shaker` family (PhISEM collision events into ≤ 3 resonances), with tests that the event rate
   and resonance peaks fall within 10 % of the set values. Check it on maracas, tambourine and applause. Verify all 3
   score above their placeholder score. (Design D4o: maracas 230 0.66, tambourine 435 0.61, applause 26 0.48, stream
