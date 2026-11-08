@@ -1,0 +1,10 @@
+target/
+node_modules/
+build/
+.DS_Store
+# Never committed: Windows gm.dls, the gmplus soundfont, third-party MIDI, renders
+*.dls
+*.sf2
+*.mid
+*.wav
+*.mp3

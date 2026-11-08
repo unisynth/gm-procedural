@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { availableParallelism } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { serve } from "./serve";
-import { loudness, octaveLtas, readWav, writeWav, type Audio } from "../synth-parity/metrics.ts";
+import { loudness, octaveLtas, readWav, writeWav, type Audio } from "./metrics.ts";
 import { BANDS, dist } from "./dist.ts";
 import { nameWaves, pairsOf, rightPass, waveData } from "./dlsname.ts";
 import { eventText, parse, parts, solo, trim, type Part } from "./smf.ts";
@@ -308,6 +308,7 @@ ${STYLE}
 <p>gm.dls = Windows bank · gmplus = SC-55-based soundfont · gen-gm = procedural, fitted to gm.dls · gen-plus = procedural, fitted to gmplus
 (<b>${[...plusFitted].filter((w) => w < 495).length}/495 waves fitted</b>${[...plusFitted].some((w) => w >= 495) ? `, ${[...plusFitted].filter((w) => w >= 495).length} stereo partners` : ""}; until all are fitted, trust the gen-plus column only where "plus fitted" is high).
 Same renderer (AUMIDISynth) for all four; one gain per row. <code>tf</code>: timbre-over-time distance, 0 = identical.</p>
+${SOURCES}
 <pre>${esc(md.split("## Instruments")[0])}</pre>
 <h2>Instruments ranked by gen-gm tf (worst first)</h2><table><tr><th>instrument</th><th>parts</th><th>tf gen-gm</th><th>ΔLUFS</th><th>gmfit</th><th class="l">waves</th></tr>
 ${ins.map((i) => `<tr><td>${esc(i.k)}</td><td>${i.n}</td>${tfc(i.tf)}<td class="${Math.abs(i.dl) > 3 ? "bad" : ""}">${fmt(i.dl)}</td><td>${fmt(i.bank, 3)}</td><td class="l">${i.waves.join(" ")}</td></tr>`).join("\n")}</table>
@@ -324,6 +325,12 @@ ${PLAYER_JS}`;
   console.log(`${join(OUT, "index.html")}\n${join(OUT, "report.md")}`);
   if (existsSync(join(WAVES, "gm/index.json"))) wavesPage();
 }
+// Where the rendered material comes from (the renders are ours; the inputs are public downloads, never re-hosted).
+export const SOURCES = `<p><small>Sources: MIDI — John Novak, <i>Grand MS-DOS gaming General MIDI showdown</i>
+(<a href="https://archive.org/details/DOS-Gaming-General-MIDI-Comparison">archive.org</a>) and <i>The Very Best of GUS MIDI</i>
+(<a href="https://archive.org/details/BESTMID6">archive.org BESTMID6</a>). Banks — Windows <code>gm.dls</code> (© Microsoft / Roland,
+read from a local copy) and gmplus (fan soundfont from Roland Sound Canvas samples, Release 1, by Distortion Dog).
+All audio rendered by <a href="https://github.com/robertcsakany/gm-procedural">gm-procedural</a> for comparison only.</small></p>`;
 const STYLE = `<style>.ab{white-space:nowrap}body{font:13px system-ui;margin:20px;background:#111;color:#ddd}a{color:#8cf}table{border-collapse:collapse;margin:6px 0 18px}
 td,th{padding:2px 6px;border-bottom:1px solid #333;text-align:right}td:first-child,th:first-child,td.l,th.l{text-align:left}.bad{color:#f66}.warn{color:#fc6}.good{color:#6d6}
 button{background:#333;color:#ddd;border:1px solid #555;margin:0 1px;cursor:pointer;font-size:12px}button.on{background:#2a6;color:#fff}button.dim{opacity:.45}
@@ -401,6 +408,7 @@ ${STYLE}
 <p>Each wave played as the bank stores it (loop repeated to 2 s), at its own rate: gm.dls and gen-gm at 22.05 kHz, gmplus target and gen-plus at 32 kHz.
 The ${partnerCount} waves marked <b>stereo</b> play gmplus's panned layers and gen-plus's partner wave on the right channel.
 gmplus = the target gmfit derives from gmplus.sf2 for this wave (filter + mod envelope baked, level-matched). Score: gmfit, 1 = identical to its own target.</p>
+${SOURCES}
 <table id="tw"><tr><th>wave</th><th class="l">instruments</th><th class="l">category</th><th></th><th>gen-gm score</th><th>gen-plus score</th><th class="l">gmplus sample</th><th class="l">flags gen-gm / gen-plus</th></tr>
 ${gm.map((g, i) => { const p = plus[i];
   return `<tr id="w${i}" data-cat="${esc(g.category)}" data-fit="${p.placeholder ? 0 : 1}"><td><a href="#w${i}">${i}</a></td><td class="l">${esc(g.instruments.slice(0, 3).join(", "))}${g.instruments.length > 3 ? ` +${g.instruments.length - 3}` : ""}</td>

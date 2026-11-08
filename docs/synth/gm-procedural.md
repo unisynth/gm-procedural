@@ -545,3 +545,13 @@ hat 0.65, Bass 0.89, Strings 0.67 (loop vibrato + AM), Piano 0.75 (stiff string 
 | Organ 1 wave 150, `analyze` only | 0.994 |
 | Organ wave 151 / 6, `analyze` only | 0.93 / 0.85 |
 | Detuned Organ wave 121: analyze → fit 40 iterations (2 s) | 0.41 → 0.47 |
+
+## Publishing and consumers
+
+The listening pages and their renders are public at `https://storage.googleapis.com/gm-procedural/index.html`
+(bucket `gs://gm-procedural`, project `judo-ng`). `tools/publish.sh` uploads `build/gm/songs` (mp3, pages, metrics),
+the hand-made round pages (`pages/<name>/index.html` + their clips from `build/gm/<name>/`) and `pages/index.html`.
+It never uploads banks, MIDI, logs or the renderer binary.
+
+64k depends on `dls` and `gmgen` by git revision (`[workspace.dependencies]` in its root `Cargo.toml`); bumping the
+`rev` there picks up a new bank.

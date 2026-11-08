@@ -1,6 +1,6 @@
 // Time × band distance between two renders of the same MIDI: third-octave band levels per 46 ms frame (mono),
 // compared after removing the overall gain difference, so it measures timbre and balance over time, not level.
-import type { Audio } from "../synth-parity/metrics.ts";
+import type { Audio } from "./metrics.ts";
 
 const N = 2048, HOP = 1024;
 export const BANDS = Array.from({ length: 26 }, (_, i) => 50 * 2 ** (i / 3)); // 50 Hz … 16 kHz
