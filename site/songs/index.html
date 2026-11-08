@@ -101,7 +101,7 @@ function renderDetail() {
     <td class="w">${x.waves.slice(0, 10).map((w) => `<a href="../sounds/#w${w}">${w}</a>`).join(" ")}${x.waves.length > 10 ? " …" : ""}</td></tr>`).join("")}
   </tbody></table>
   <p class="help"><b>gm.dls</b> is © Microsoft / Roland, so it plays as a recording; <b>gmplus</b>, <b>gen-gm</b> and <b>gen-plus</b> play live in your browser from the MIDI file.
-  The procedural banks are built on this page by <code>gmgen</code> compiled to WebAssembly, from 230 KB of parameters. All four use the same engine
+  The procedural banks come from 230 KB of parameters through <code>gmgen</code> compiled to WebAssembly: gen-plus is built on this page (then cached), gen-gm is downloaded as that generator's checked output. All four use the same engine
   (<a href="https://github.com/spessasus/spessasynth_lib">SpessaSynth</a>), so only the banks differ. A solo mutes the other channels (the gm.dls solo is a separate recording).
   Distances are measured on full mixes and on 30 s excerpts of each part. <kbd>1</kbd>–<kbd>4</kbd> switch bank at the same position,
   <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> seek, <kbd>N</kbd> / <kbd>P</kbd> next / previous song, <kbd>L</kbd> loop.

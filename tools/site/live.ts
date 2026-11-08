@@ -1,6 +1,7 @@
 // Live engine of the site (bundled to site/assets/live.js by tools/site/build.ts): SpessaSynth in an AudioWorklet
-// playing MIDI through the banks that may be published or built: gen-gm and gen-plus generated in the browser by
-// gmgen.wasm, gmplus.sf2 from the bucket. gm.dls is never loaded here (its renders are plain audio files).
+// playing MIDI through the banks that may be published or built: gen-gm prebuilt from the bucket (checked against
+// the bundled sha1, else built), gen-plus generated in the browser by gmgen.wasm and kept in the Cache API,
+// gmplus.sf2 from the bucket. gm.dls is never loaded here (its renders are plain audio files).
 import { Sequencer, WorkletSynthesizer } from "spessasynth_lib";
 
 export type LiveBank = "s" | "g" | "p";
@@ -11,6 +12,11 @@ const WORKER = new URL("./gmgen-worker.js", import.meta.url).href;
 // gmgen.wasm is a binary, so it lives in the bucket; the query is its content hash (set at bundle time) to bust caches
 declare const GMGEN_WASM_HASH: string;
 const GMGEN_WASM = `${BUCKET}gmgen.wasm?v=${GMGEN_WASM_HASH}`;
+// sha1 of the prebuilt gen-gm (= gmgen.wasm output, tools/site/build.ts); the download is checked against it
+declare const GEN_GM_SHA1: string;
+const GEN_GM = `${BUCKET}banks/gen-gm.dls?v=${GEN_GM_SHA1.slice(0, 12)}`;
+// built banks are kept in the Cache API, keyed by the wasm hash (a new generator invalidates them)
+const CACHE = "gmgen";
 
 const buffers: Partial<Record<LiveBank, Promise<ArrayBuffer>>> = {};
 export const built: Partial<Record<LiveBank, number>> = {}; // ms to build (procedural banks)
@@ -46,11 +52,37 @@ async function download(url: string, bank: LiveBank, label: string, progress?: P
   return out.buffer;
 }
 
-/** The bank's DLS/SF2 bytes, fetched or generated once per page. */
+/** gen-gm prebuilt (3.4 MB), accepted only when its sha1 matches the bundled one. */
+async function prebuiltGm(progress?: Progress): Promise<ArrayBuffer> {
+  const b = await download(GEN_GM, "g", "loading gen-gm", progress);
+  const h = [...new Uint8Array(await crypto.subtle.digest("SHA-1", b))].map((x) => x.toString(16).padStart(2, "0")).join("");
+  if (h !== GEN_GM_SHA1) throw new Error(`gen-gm.dls sha1 ${h}, expected ${GEN_GM_SHA1}`);
+  return b;
+}
+
+/** A bank built once per wasm version: from the Cache API when present, else `make()` and store it. */
+async function cached(name: string, make: () => Promise<ArrayBuffer>): Promise<ArrayBuffer> {
+  const key = `${BUCKET}built/${name}.dls?v=${GMGEN_WASM_HASH}`;
+  const cache = await caches.open(CACHE).catch(() => undefined); // no Cache API (insecure context): build every time
+  const hit = await cache?.match(key);
+  if (hit) return hit.arrayBuffer();
+  const b = await make();
+  if (cache) {
+    for (const k of await cache.keys()) if (k.url.includes(`/built/${name}.dls`) && k.url !== key) await cache.delete(k);
+    await cache.put(key, new Response(b.slice(0))).catch(() => {}); // quota: keep playing without caching
+  }
+  return b;
+}
+
+/** The bank's DLS/SF2 bytes, once per page: gmplus.sf2 downloaded; gen-gm prebuilt, else built (cached);
+ *  gen-plus (29 MB prebuilt) built in the page and cached, else the prebuilt fallback. */
 export function bankBytes(bank: LiveBank, progress?: Progress): Promise<ArrayBuffer> {
+  const plusFallback = () => download(`${BUCKET}banks/gen-plus.dls`, bank, "loading the prebuilt bank", progress);
   return (buffers[bank] ??= bank === "s"
     ? download(`${BUCKET}banks/gmplus.sf2`, bank, "loading gmplus.sf2", progress)
-    : generate(bank === "g" ? 0 : 1, bank, progress).catch(() => download(`${BUCKET}banks/${bank === "g" ? "gen-gm" : "gen-plus"}.dls`, bank, "loading the prebuilt bank", progress)));
+    : bank === "g"
+      ? prebuiltGm(progress).catch(() => cached("gen-gm", () => generate(0, bank, progress)))
+      : cached("gen-plus", () => generate(1, bank, progress)).catch(plusFallback));
 }
 
 export class Live {

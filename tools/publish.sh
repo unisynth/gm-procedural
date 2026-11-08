@@ -2,7 +2,8 @@
 # Publish the site's audio to the public bucket (default gs://gm-procedural, CORS *).
 #   site/songs/<id>/{mix,ch<N>}.mp3, site/waves/NNN.mp3   gm.dls renders (tools/spessa/render.ts) — the only gm.dls audio
 #   site/midi/<id>.mid                                     the songs, played live by the site
-#   site/banks/gmplus.sf2, gen-gm.dls, gen-plus.dls        live banks (gen-* are fallbacks; the site builds them itself)
+#   site/banks/gmplus.sf2, gen-gm.dls, gen-plus.dls        live banks: gen-gm is loaded by default (the wasm's output,
+#                                                          sha1-checked by the page); gen-plus is a fallback (the page builds it)
 #   site/gmgen.wasm                                        the bank generator the page runs (all binaries live here, not on Pages)
 #   gm/pages/<name>/, index.html                           hand-made fitting-round pages (pages/) + their clips (build/gm/<name>/)
 # Never uploads gm.dls itself, logs or temporary files. Usage: tools/publish.sh [--dry-run]
@@ -18,7 +19,8 @@ for d in songs waves midi; do
 done
 if [[ -z "$DRY" ]]; then
   gcloud storage cp -n "${GMPLUS_SF2:?set GMPLUS_SF2}" "$B/site/banks/gmplus.sf2"
-  gcloud storage cp build/gm/gen.dls "$B/site/banks/gen-gm.dls"
+  # gen-gm as written by bun tools/site/build.ts (gmgen.wasm output, its sha1 is bundled in live.js)
+  gcloud storage cp "$A/banks/gen-gm.dls" "$B/site/banks/gen-gm.dls"
   gcloud storage cp build/gm-plus/gen.dls "$B/site/banks/gen-plus.dls"
   # the bank generator the site runs in the browser (bun tools/site/build.ts puts it here); fetched as ?v=<hash>
   gcloud storage cp --content-type=application/wasm "$A/gmgen.wasm" "$B/site/gmgen.wasm"

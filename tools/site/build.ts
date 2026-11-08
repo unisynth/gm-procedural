@@ -1,11 +1,13 @@
 // Builds the GitHub Pages site's generated parts:
-//   bun tools/site/build.ts   → site/data/{songs,waves,stats}.json, site/assets/{live.js, spessasynth_processor.min.js}, build/site-audio/gmgen.wasm (→ bucket)
+//   bun tools/site/build.ts   → site/data/{songs,waves,stats}.json, site/assets/{live.js, spessasynth_processor.min.js},
+//                               build/site-audio/{gmgen.wasm, banks/gen-gm.dls} (→ bucket)
 // Inputs: build/site-audio/{results*.json, waves.json} (tools/spessa/render.ts), build/gm/songs/selection.json,
 // build/gm/songs/waves/{gm,plus}/index.json (`gmfit dump`, scores and flags), assets/ (committed), and
 // target/wasm32-unknown-unknown/fast/gmgen_wasm.wasm (`cargo build --profile fast -p gmgen-wasm --target wasm32-unknown-unknown`).
 // Audio is not copied: gm.dls renders, MIDI and gmplus.sf2 stream from the bucket (tools/publish.sh).
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { sha1, wasmBank } from "./bank.ts";
 import { songTitle } from "./titles.ts";
 
 const ROOT = join(import.meta.dir, "../..");
@@ -96,8 +98,16 @@ async function assets() {
   if (!existsSync(wasm)) throw new Error("build gmgen-wasm first: cargo build --profile fast -p gmgen-wasm --target wasm32-unknown-unknown");
   mkdirSync(AUDIO, { recursive: true });
   copyFileSync(wasm, join(AUDIO, "gmgen.wasm"));
-  const hash = new Bun.CryptoHasher("sha1").update(readFileSync(wasm)).digest("hex").slice(0, 12);
-  const r = await Bun.build({ entrypoints: [join(import.meta.dir, "live.ts")], outdir: dst, target: "browser", format: "esm", minify: true, naming: "live.js", define: { GMGEN_WASM_HASH: JSON.stringify(hash) } });
+  const hash = sha1(readFileSync(wasm)).slice(0, 12);
+  // gen-gm is downloaded prebuilt by default (3.4 MB beats the ~1.4 s browser build): it is the wasm's own output, so
+  // it is what the page would build; the page checks its sha1 and builds it itself on a mismatch
+  const gm = await wasmBank(wasm, 0);
+  const native = join(ROOT, "build/gm/gen.dls");
+  if (existsSync(native) && sha1(readFileSync(native)) !== sha1(gm)) throw new Error("gmgen.wasm gen-gm differs from build/gm/gen.dls: rebuild both (gmfit bank, cargo build -p gmgen-wasm)");
+  mkdirSync(join(AUDIO, "banks"), { recursive: true });
+  writeFileSync(join(AUDIO, "banks/gen-gm.dls"), gm);
+  const define = { GMGEN_WASM_HASH: JSON.stringify(hash), GEN_GM_SHA1: JSON.stringify(sha1(gm)) };
+  const r = await Bun.build({ entrypoints: [join(import.meta.dir, "live.ts")], outdir: dst, target: "browser", format: "esm", minify: true, naming: "live.js", define });
   if (!r.success) throw new Error(r.logs.join("\n"));
   copyFileSync(join(ROOT, "node_modules/spessasynth_lib/dist/spessasynth_processor.min.js"), join(dst, "spessasynth_processor.min.js"));
 }
@@ -109,5 +119,5 @@ if (import.meta.main) {
   writeFileSync(join(OUT, "waves.json"), JSON.stringify({ audio: BUCKET, waves: w }));
   writeFileSync(join(OUT, "stats.json"), JSON.stringify(st, null, 1));
   await assets();
-  console.log(`site: ${s.length} songs, ${w.length} waves, gm A/B/C ${st.gm.A}/${st.gm.B}/${st.gm.C}; live.js, processor; gmgen.wasm → build/site-audio (publish to the bucket)`);
+  console.log(`site: ${s.length} songs, ${w.length} waves, gm A/B/C ${st.gm.A}/${st.gm.B}/${st.gm.C}; live.js, processor; gmgen.wasm, banks/gen-gm.dls → build/site-audio (publish to the bucket)`);
 }

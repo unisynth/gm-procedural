@@ -551,9 +551,11 @@ hat 0.65, Bass 0.89, Strings 0.67 (loop vibrato + AM), Piano 0.75 (stiff string 
 Site: <https://gm-procedural.exceed.hu/> (`site/`, GitHub Pages). Windows `gm.dls` is copyrighted, so it is only
 published as recordings: each song's mix and every channel solo, and one note per wave, rendered by
 `tools/spessa/render.ts` with SpessaSynth (`spessasynth_core`). gmplus, gen-gm and gen-plus play live in the browser
-from the MIDI files with the same engine (`spessasynth_lib`), so an A/B switch changes only the bank. The procedural
-banks are generated in the page by `gmgen` compiled to WebAssembly (`crates/gmgen-wasm`, byte-identical to the
-native build; gm ≈ 1.4 s, plus ≈ 12 s); prebuilt copies in the bucket are only a fallback. SpessaSynth ignores the
+from the MIDI files with the same engine (`spessasynth_lib`), so an A/B switch changes only the bank. gen-gm (3.4 MB)
+loads prebuilt from the bucket, checked against the sha1 bundled in `live.js` (it is `gmgen.wasm`'s own output,
+`tools/site/build.ts`); gen-plus (29 MB) is generated in the page by `gmgen` compiled to WebAssembly
+(`crates/gmgen-wasm`, byte-identical to the native build; ≈ 12 s) and kept in the browser's Cache API per wasm
+hash, so later visits load it in milliseconds. Either bank falls back to the other route on failure. SpessaSynth ignores the
 `stpr` stereo-pair chunk, so the 60 stereo gen-plus waves play their left wave. Metrics (`tf`, ΔLUFS) compare all four
 banks rendered offline. Audio, MIDI and gmplus.sf2: public bucket `gs://gm-procedural/site/` (project `judo-ng`,
 CORS `*`), `tools/publish.sh`. The older AUMIDISynth four-way pages (`tools/gm-songs`) remain a local tool.
