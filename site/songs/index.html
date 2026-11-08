@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Songs · gm-procedural</title>
+<meta name="description" content="70 General MIDI songs through four banks: Windows gm.dls, gmplus, and the procedural banks fitted to each. Switch banks at the same position.">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#detail">Skip to the song</a>
+<header class="transport always" id="transport">
+  <div class="wrap">
+    <a class="logo" href="../"><span class="bars4" aria-hidden="true"><b></b><b></b><b></b><b></b></span>gm-procedural</a>
+    <nav aria-label="Sections"><a href="../#problem">Problem</a><a href="../#model">Model</a><a href="../#fit">Fit</a><a href="../#judge">Judge</a><a href="../#results">Results</a><a href="../#papers">Papers</a></nav>
+    <span class="sp"></span>
+    <div class="tlinks"><a class="live" href="./" aria-current="page"><b aria-hidden="true"></b>Songs</a><a href="../sounds/">Sounds</a><a href="https://github.com/unisynth/gm-procedural" aria-label="gm-procedural on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg><span class="lbl">GitHub</span></a></div>
+  </div>
+</header>
+
+<main class="app">
+  <div class="deck" id="deck" role="region" aria-label="Player">
+    <div class="wrap">
+      <div class="now" aria-live="polite"><div class="t">Pick a song</div><div class="b">70 General MIDI songs · four banks each</div></div>
+      <div class="banks" role="group" aria-label="Bank"></div>
+      <div class="tbar">
+        <button class="play" aria-label="Play">▶</button>
+        <div class="seek" role="slider" aria-label="Position" tabindex="-1"><canvas></canvas></div>
+        <button class="loop" aria-pressed="false" title="L">loop</button>
+        <output class="time">0:00 / 0:00</output>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap lib">
+    <aside class="side" aria-label="Songs">
+      <div class="tools">
+        <label class="sr" for="q">Search songs</label>
+        <input id="q" class="search" type="search" placeholder="Search title, game, artist or instrument…" autocomplete="off">
+        <div class="chips" id="src" role="group" aria-label="Collection">
+          <button data-v="" aria-pressed="true">all</button><button data-v="novak" aria-pressed="false">DOS games</button><button data-v="gus" aria-pressed="false">GUS MIDI</button>
+        </div>
+        <div class="sort"><label for="sort">sort</label>
+          <select id="sort"><option value="title">title</option><option value="best">closest gen-gm</option><option value="worst">furthest gen-gm</option><option value="bestp">closest gen-plus</option><option value="len">length</option></select></div>
+      </div>
+      <ol class="list" id="list"></ol>
+      <div class="count" id="count"></div>
+    </aside>
+
+    <article class="detail" id="detail" tabindex="-1"></article>
+  </div>
+</main>
+
+<script type="module">
+import { Deck, BANKS } from "../assets/player.js";
+const { audio: AUDIO, songs: SONGS } = await (await fetch("../data/songs.json")).json();
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const dur = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const SRC = { novak: "DOS games · John Novak's General MIDI showdown", gus: "The Very Best of GUS MIDI (1994)" };
+const good = (tf) => tf != null && tf < 4;
+let cur = null, part = "mix", filter = "", q = "", sort = "title";
+
+const deck = new Deck($("#deck"), { onEnded: () => !deck.loopOn && part === "mix" && step(1) });
+const urls = (s, name) => Object.fromEntries(BANKS.map((b) => [b.k, `${AUDIO}${s.id}/${name}-${b.file}.mp3`]));
+
+function visible() {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  let v = SONGS.filter((s) => (!filter || s.src === filter) && words.every((w) => (s.title + " " + s.by + " " + s.stems.map((x) => x.label).join(" ")).toLowerCase().includes(w)));
+  const by = { title: (a, b) => a.title.localeCompare(b.title), best: (a, b) => a.mix.tf - b.mix.tf, worst: (a, b) => b.mix.tf - a.mix.tf, bestp: (a, b) => a.mix.tfp - b.mix.tfp, len: (a, b) => b.seconds - a.seconds }[sort];
+  return v.sort(by);
+}
+function renderList() {
+  const v = visible();
+  $("#list").innerHTML = v.map((s) => `<li><button data-id="${s.id}" aria-current="${s.id === cur?.id}">
+    <span class="tt">${esc(s.title)}</span><span class="du">${dur(s.seconds)}</span>
+    <span class="by">${esc(s.by)}</span><span class="mx"><span class="tf g ${good(s.mix.tf) ? "good" : ""}" title="gen-gm ↔ gm.dls timbre distance">${s.mix.tf.toFixed(1)}</span><span class="tf p ${good(s.mix.tfp) ? "good" : ""}" title="gen-plus ↔ gmplus timbre distance">${s.mix.tfp.toFixed(1)}</span></span></button></li>`).join("");
+  $("#count").textContent = `${v.length} of ${SONGS.length} songs`;
+}
+const bar = (x, c) => x == null ? "" : `<span class="tfbar" style="--c:${c}"><i style="width:${Math.min(100, (x / 10) * 100)}%"></i></span>`;
+function renderDetail() {
+  const s = cur;
+  $("#detail").innerHTML = `
+  <p class="kicker" style="--acc:var(--b-g)">${esc(SRC[s.src])}</p>
+  <h1>${esc(s.title)}</h1>
+  <p class="cr">${esc(s.by)} · ${dur(s.seconds)} · ${s.stems.length} channels</p>
+  <div class="mixrow">
+    <div class="m" style="border-top:2px solid var(--b-g)"><div class="v">${s.mix.tf.toFixed(2)}</div><div class="l">timbre distance, gen-gm ↔ gm.dls (dB per band and frame; 0 = identical)</div></div>
+    <div class="m" style="border-top:2px solid var(--b-p)"><div class="v">${s.mix.tfp.toFixed(2)}</div><div class="l">gen-plus ↔ gmplus</div></div>
+    <div class="m" style="border-top:2px solid var(--b-s)"><div class="v">${s.mix.tfs.toFixed(2)}</div><div class="l">for scale: gmplus ↔ gm.dls, two real banks</div></div>
+    <div class="m"><div class="v">${s.mix.dl > 0 ? "+" : ""}${s.mix.dl.toFixed(1)}</div><div class="l">loudness gen-gm − gm.dls (LU), removed before tf</div></div>
+  </div>
+  <table class="stems"><thead><tr><th></th><th>part</th><th>notes</th><th>tf gen-gm</th><th>tf gen-plus</th><th class="w">waves</th></tr></thead><tbody>
+  <tr data-p="mix" class="${part === "mix" ? "on" : ""}"><td><button class="sp" aria-label="Play the whole mix">▶</button></td><td><b>Full mix</b></td><td class="n">${s.stems.reduce((a, x) => a + x.notes, 0)}</td><td class="n">${s.mix.tf.toFixed(2)}${bar(s.mix.tf, "var(--b-g)")}</td><td class="n">${s.mix.tfp.toFixed(2)}${bar(s.mix.tfp, "var(--b-p)")}</td><td class="w"></td></tr>
+  ${s.stems.map((x) => `<tr data-p="ch${x.ch}" class="${part === `ch${x.ch}` ? "on" : ""}"><td><button class="sp" aria-label="Play ${esc(x.label)} solo">▶</button></td>
+    <td>${esc(x.label)}${x.drums ? ' <span class="tf s">kit</span>' : ""}</td><td class="n">${x.notes}</td>
+    <td class="n">${x.tf?.toFixed(2) ?? "–"}${bar(x.tf, "var(--b-g)")}</td><td class="n">${x.tfp?.toFixed(2) ?? "–"}${bar(x.tfp, "var(--b-p)")}</td>
+    <td class="w">${x.waves.slice(0, 10).map((w) => `<a href="../sounds/#w${w}">${w}</a>`).join(" ")}${x.waves.length > 10 ? " …" : ""}</td></tr>`).join("")}
+  </tbody></table>
+  <p class="help">Solo parts are 30-second excerpts with the other channels' notes removed (their controllers kept). All four banks go through the same
+  renderer (Apple's AUMIDISynth) with one gain per row, so only the waves differ. <kbd>1</kbd>–<kbd>4</kbd> switch bank at the same position,
+  <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> seek, <kbd>N</kbd> / <kbd>P</kbd> next / previous song, <kbd>L</kbd> loop.
+  Wave numbers open the sound in <a href="../sounds/">the sounds browser</a>.</p>`;
+  $("#detail").querySelectorAll("tr[data-p]").forEach((tr) => tr.addEventListener("click", (e) => { if (e.target.closest("a")) return; playPart(tr.dataset.p); }));
+}
+function playPart(p) {
+  part = p;
+  const st = p === "mix" ? null : cur.stems.find((x) => `ch${x.ch}` === p);
+  deck.load(urls(cur, p), { title: st ? `${cur.title} — ${st.label}` : cur.title, by: st ? `solo · 30 s excerpt · ${cur.by}` : cur.by });
+  document.querySelectorAll("tr[data-p]").forEach((tr) => tr.classList.toggle("on", tr.dataset.p === p));
+  history.replaceState(null, "", `#${cur.id}${p === "mix" ? "" : "/" + p}`);
+}
+function select(id, { play = true, p = "mix" } = {}) {
+  cur = SONGS.find((s) => s.id === id) || SONGS[0]; part = p;
+  renderList(); renderDetail();
+  if (play) playPart(p); else { deck.load(urls(cur, p), { title: cur.title, by: cur.by, autoplay: false }); history.replaceState(null, "", `#${cur.id}`); }
+  document.querySelector(`.list button[data-id="${cur.id}"]`)?.scrollIntoView({ block: "nearest" });
+}
+function step(d) { const v = visible(); const i = v.findIndex((s) => s.id === cur?.id); select(v[(i + d + v.length) % v.length].id); }
+
+$("#list").addEventListener("click", (e) => { const b = e.target.closest("button[data-id]"); if (b) select(b.dataset.id); });
+$("#q").addEventListener("input", (e) => { q = e.target.value; renderList(); });
+$("#sort").addEventListener("change", (e) => { sort = e.target.value; renderList(); });
+$("#src").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; filter = b.dataset.v; $("#src").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b)); renderList(); });
+addEventListener("keydown", (e) => { if (e.target.closest("input, select") || e.metaKey || e.ctrlKey) return; if (e.key === "n" || e.key === "N") step(1); if (e.key === "p" || e.key === "P") step(-1); });
+
+const [hid, hp] = location.hash.slice(1).split("/");
+select(SONGS.some((s) => s.id === hid) ? hid : "novak-doom-e1m1", { play: false, p: hp || "mix" });
+</script>
+</body>
+</html>

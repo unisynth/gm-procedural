@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sounds · gm-procedural</title>
+<meta name="description" content="All 495 waves of the General MIDI bank: the original gm.dls and gmplus samples next to the procedural versions, with fit scores.">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#grid">Skip to the sounds</a>
+<header class="transport always" id="transport">
+  <div class="wrap">
+    <a class="logo" href="../"><span class="bars4" aria-hidden="true"><b></b><b></b><b></b><b></b></span>gm-procedural</a>
+    <nav aria-label="Sections"><a href="../#problem">Problem</a><a href="../#model">Model</a><a href="../#fit">Fit</a><a href="../#judge">Judge</a><a href="../#results">Results</a><a href="../#papers">Papers</a></nav>
+    <span class="sp"></span>
+    <div class="tlinks"><a class="live" href="../songs/"><b aria-hidden="true"></b>Songs</a><a href="./" aria-current="page">Sounds</a><a href="https://github.com/unisynth/gm-procedural" aria-label="gm-procedural on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg><span class="lbl">GitHub</span></a></div>
+  </div>
+</header>
+
+<main class="app">
+  <div class="deck" id="deck" role="region" aria-label="Player">
+    <div class="wrap">
+      <div class="now" aria-live="polite"><div class="t">Pick a sound</div><div class="b">each wave as the bank stores it, its loop repeated to 2 s</div></div>
+      <div class="banks" role="group" aria-label="Bank"></div>
+      <div class="tbar">
+        <button class="play" aria-label="Play">▶</button>
+        <div class="seek" role="slider" aria-label="Position" tabindex="-1"><canvas></canvas></div>
+        <button class="loop" aria-pressed="true" title="L">loop</button>
+        <output class="time">0:00 / 0:00</output>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="toolbar">
+      <label class="sr" for="q">Search</label>
+      <input id="q" class="search" type="search" placeholder="Instrument, wave number, sample…" autocomplete="off">
+      <div class="chips" id="cats" role="group" aria-label="Category"></div>
+      <div class="sort"><label for="sort">sort</label>
+        <select id="sort"><option value="w">wave</option><option value="g">gen-gm score ↓</option><option value="gr">gen-gm score ↑</option><option value="p">gen-plus score ↓</option></select></div>
+      <span class="sort" id="count"></span>
+    </div>
+    <p class="note">Score: gmfit's similarity to its own target, 100 = identical (log-mel spectra, onset, envelope, exact loop spectrum, periodicity and
+    modulation, minus penalties for audible defects). gm.dls and gen-gm play at 22.05 kHz; the gmplus target and gen-plus at 32 kHz.
+    Flags are defects the fitter detected but could not fix.</p>
+    <div class="grid" id="grid"></div>
+  </div>
+</main>
+
+<script type="module">
+import { Deck, BANKS } from "../assets/player.js";
+const { audio: AUDIO, waves: WAVES } = await (await fetch("../data/waves.json")).json();
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const names = (w) => [...new Set(w.ins.map((s) => s.replace(/ \(.*\)$/, "").replace(/ kit, key (\d+)$/, " kit · key $1")))];
+const pad = (w) => String(w).padStart(3, "0");
+const tier = (s) => (s >= 85 ? "var(--ok)" : s >= 70 ? "var(--warn)" : "var(--err)");
+const CATS = [...new Set(WAVES.map((w) => w.cat))].sort();
+let cat = "", q = "", sort = "w", cur = null;
+
+const deck = new Deck($("#deck"), { onBank: () => mark() });
+deck.loopOn = true; deck.audio.loop = true;
+$("#cats").innerHTML = [`<button data-v="" aria-pressed="true">all</button>`, ...CATS.map((c) => `<button data-v="${c}" aria-pressed="false">${c}</button>`)].join("");
+
+function visible() {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const v = WAVES.filter((w) => (!cat || w.cat === cat) && words.every((x) => (pad(w.w) + " " + w.ins.join(" ") + " " + (w.src || "") + " " + w.cat).toLowerCase().includes(x)));
+  const by = { w: (a, b) => a.w - b.w, g: (a, b) => b.g - a.g, gr: (a, b) => a.g - b.g, p: (a, b) => (b.p ?? 0) - (a.p ?? 0) }[sort];
+  return v.sort(by);
+}
+function render() {
+  const v = visible();
+  $("#count").textContent = `${v.length} sounds`;
+  $("#grid").innerHTML = v.map((w) => `<div class="snd" id="w${w.w}" data-wave="${w.w}">
+    <div class="h"><span class="id">${pad(w.w)}</span><span class="cat">${esc(w.cat)}</span></div>
+    <div class="ins" title="${esc(w.ins.join("\n"))}">${esc(names(w).slice(0, 3).join(", "))}${names(w).length > 3 ? ` +${names(w).length - 3}` : ""}</div>
+    <div class="ab">${BANKS.map((b, i) => `<button data-k="${b.k}" style="--c:${b.c}" aria-pressed="false" title="${b.name} (key ${i + 1})">${b.name}</button>`).join("")}</div>
+    <div class="sc"><span>gen-gm <b style="color:${tier(w.g)}">${w.g.toFixed(0)}</b></span><span>gen-plus <b style="color:${tier(w.p ?? 0)}">${w.p?.toFixed(0) ?? "–"}</b></span>${w.src ? `<span title="gmplus sample">${esc(w.src)}</span>` : ""}${w.fl.length ? `<span class="fl" title="defect flags">${esc(w.fl.join(" "))}</span>` : ""}</div>
+  </div>`).join("");
+  mark();
+}
+function mark() {
+  document.querySelectorAll(".snd").forEach((el) => {
+    const on = +el.dataset.wave === cur?.w; el.classList.toggle("on", on);
+    el.querySelectorAll(".ab button").forEach((b) => b.setAttribute("aria-pressed", String(on && b.dataset.k === deck.bank)));
+  });
+}
+function play(w, k) {
+  cur = WAVES.find((x) => x.w === w);
+  if (k) { deck.bank = k; localStorage.setItem("gmp.bank", k); }
+  const u = Object.fromEntries(BANKS.map((b) => [b.k, `${AUDIO}${pad(w)}-${b.file}.mp3`]));
+  deck.load(u, { title: `${pad(w)} · ${names(cur)[0]}`, by: `${cur.cat} · ${names(cur).join(", ")}${cur.src ? ` · gmplus “${cur.src}”` : ""}` });
+  history.replaceState(null, "", `#w${w}`);
+  mark();
+}
+$("#grid").addEventListener("click", (e) => { const b = e.target.closest(".ab button"); const c = e.target.closest(".snd"); if (!c) return; play(+c.dataset.wave, b?.dataset.k); });
+$("#q").addEventListener("input", (e) => { q = e.target.value; render(); });
+$("#sort").addEventListener("change", (e) => { sort = e.target.value; render(); });
+$("#cats").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; cat = b.dataset.v; $("#cats").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b)); render(); });
+render();
+const m = location.hash.match(/^#w(\d+)$/);
+if (m) { const w = +m[1]; const el = document.getElementById(`w${w}`); el?.scrollIntoView({ block: "center" }); cur = WAVES.find((x) => x.w === w); const u = Object.fromEntries(BANKS.map((b) => [b.k, `${AUDIO}${pad(w)}-${b.file}.mp3`])); deck.load(u, { title: `${pad(w)} · ${names(cur)[0]}`, by: cur.cat, autoplay: false }); mark(); }
+</script>
+</body>
+</html>

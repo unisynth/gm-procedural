@@ -8,7 +8,8 @@ drum, metal, modal, shaker, FM, formant, Karplus-Strong, subtractive). The gener
 `RIFF 'DLS '` bank with the original layout, so any DLS player can use it. The parameters are fitted by measuring and
 listening against the original.
 
-**Listen:** https://storage.googleapis.com/gm-procedural/index.html — original vs generated, per wave and in whole songs.
+**Site:** <https://gm-procedural.exceed.hu/>: the method, the papers, a song selector (70 songs × 4 banks) and all 495 sounds.
+Raw listening pages: https://storage.googleapis.com/gm-procedural/index.html
 
 | Path | What |
 |---|---|
@@ -18,6 +19,8 @@ listening against the original.
 | `assets/gm`, `assets/gm-plus` | bank structure (no audio) + per-wave parameters + committed scores |
 | `tools/gm-songs` | full-song four-way A/B: SMF parser, AUMIDISynth renderer, metrics, page generator, Range server |
 | `tools/publish.sh` | uploads pages + renders to the public bucket |
+| `tools/site/` | builds `site/data/*.json` from the renders (`bun tools/site/build.ts`) |
+| `site/` | GitHub Pages site (`gm-procedural.exceed.hu`): landing page, `songs/`, `sounds/`; audio streams from the bucket |
 | `pages/` | hand-made listening pages of the fitting rounds |
 | `docs/synth/gm-procedural.md` | formats, render pipeline, families and parameter tables, commands |
 | `research/` | instrument research, pilot results |
@@ -27,8 +30,8 @@ listening against the original.
 
 ```toml
 [dependencies]
-dls   = { git = "https://github.com/robertcsakany/gm-procedural", rev = "<sha>" }
-gmgen = { git = "https://github.com/robertcsakany/gm-procedural", rev = "<sha>", default-features = false }
+dls   = { git = "https://github.com/unisynth/gm-procedural", rev = "<sha>" }
+gmgen = { git = "https://github.com/unisynth/gm-procedural", rev = "<sha>", default-features = false }
 ```
 
 ```rust
@@ -38,7 +41,7 @@ let dls = dls::Dls::parse(&bank).unwrap();
 
 The bank is deterministic: the same parameters give byte-identical output on every platform. To work on this repo
 and a consumer at the same time, override the git source with a local path in the consumer's
-`.cargo/config.toml` (`[patch."https://github.com/robertcsakany/gm-procedural"] gmgen = { path = "../gm-procedural/crates/gmgen" }`, same for `dls`).
+`.cargo/config.toml` (`[patch."https://github.com/unisynth/gm-procedural"] gmgen = { path = "../gm-procedural/crates/gmgen" }`, same for `dls`).
 
 ## Build and test
 
@@ -56,6 +59,16 @@ Fitting needs the originals on your machine — they are never committed or uplo
 ```bash
 gcloud auth login
 tools/publish.sh --dry-run && tools/publish.sh     # → gs://gm-procedural (public read)
+```
+
+## Update the site
+
+```bash
+bun tools/gm-songs/run.ts render --force   # songs × 4 banks (after a bank change; see docs)
+bun tools/gm-songs/run.ts waves            # per-wave clips
+tools/publish.sh                           # audio → gs://gm-procedural
+bun tools/site/build.ts                    # site/data/*.json
+git commit site/ && git push               # .github/workflows/pages.yml deploys site/
 ```
 
 ## Provenance

@@ -330,7 +330,7 @@ export const SOURCES = `<p><small>Sources: MIDI — John Novak, <i>Grand MS-DOS 
 (<a href="https://archive.org/details/DOS-Gaming-General-MIDI-Comparison">archive.org</a>) and <i>The Very Best of GUS MIDI</i>
 (<a href="https://archive.org/details/BESTMID6">archive.org BESTMID6</a>). Banks — Windows <code>gm.dls</code> (© Microsoft / Roland,
 read from a local copy) and gmplus (fan soundfont from Roland Sound Canvas samples, Release 1, by Distortion Dog).
-All audio rendered by <a href="https://github.com/robertcsakany/gm-procedural">gm-procedural</a> for comparison only.</small></p>`;
+All audio rendered by <a href="https://github.com/unisynth/gm-procedural">gm-procedural</a> for comparison only.</small></p>`;
 const STYLE = `<style>.ab{white-space:nowrap}body{font:13px system-ui;margin:20px;background:#111;color:#ddd}a{color:#8cf}table{border-collapse:collapse;margin:6px 0 18px}
 td,th{padding:2px 6px;border-bottom:1px solid #333;text-align:right}td:first-child,th:first-child,td.l,th.l{text-align:left}.bad{color:#f66}.warn{color:#fc6}.good{color:#6d6}
 button{background:#333;color:#ddd;border:1px solid #555;margin:0 1px;cursor:pointer;font-size:12px}button.on{background:#2a6;color:#fff}button.dim{opacity:.45}

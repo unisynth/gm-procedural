@@ -1,0 +1,142 @@
+{
+ "gm": {
+  "n": 495,
+  "A": 83,
+  "B": 156,
+  "C": 256,
+  "median": 69.5,
+  "fam": {
+   "modal": 157,
+   "ks": 110,
+   "fm": 30,
+   "additive": 369,
+   "noise": 65,
+   "shaker": 24,
+   "subtractive": 5,
+   "formant": 3,
+   "metal": 8,
+   "drum": 10
+  }
+ },
+ "plus": {
+  "n": 555,
+  "A": 83,
+  "B": 138,
+  "C": 334,
+  "median": 63.61,
+  "fam": {
+   "additive": 397,
+   "shaker": 90,
+   "modal": 224,
+   "noise": 83,
+   "fm": 66,
+   "formant": 15,
+   "metal": 5,
+   "drum": 6
+  }
+ },
+ "categories": [
+  {
+   "cat": "reed",
+   "n": 43,
+   "gm": 82.23,
+   "plus": 80.22
+  },
+  {
+   "cat": "pipe",
+   "n": 22,
+   "gm": 76.02,
+   "plus": 77.69
+  },
+  {
+   "cat": "organ",
+   "n": 32,
+   "gm": 73.95,
+   "plus": 73.11
+  },
+  {
+   "cat": "brass",
+   "n": 35,
+   "gm": 72.94,
+   "plus": 63
+  },
+  {
+   "cat": "strings",
+   "n": 24,
+   "gm": 69.55,
+   "plus": 61.43
+  },
+  {
+   "cat": "synthfx",
+   "n": 9,
+   "gm": 69.4,
+   "plus": 44.4
+  },
+  {
+   "cat": "pad",
+   "n": 9,
+   "gm": 68.58,
+   "plus": 41.65
+  },
+  {
+   "cat": "piano",
+   "n": 46,
+   "gm": 68.25,
+   "plus": 61.33
+  },
+  {
+   "cat": "bass",
+   "n": 29,
+   "gm": 63.59,
+   "plus": 64.27
+  },
+  {
+   "cat": "guitar",
+   "n": 58,
+   "gm": 62.63,
+   "plus": 62.49
+  },
+  {
+   "cat": "ethnic",
+   "n": 20,
+   "gm": 61.58,
+   "plus": 66.73
+  },
+  {
+   "cat": "lead",
+   "n": 37,
+   "gm": 59.75,
+   "plus": 63.31
+  },
+  {
+   "cat": "drums",
+   "n": 91,
+   "gm": 59.45,
+   "plus": 50.71
+  },
+  {
+   "cat": "chromatic",
+   "n": 18,
+   "gm": 58.18,
+   "plus": 63.81
+  },
+  {
+   "cat": "percussive",
+   "n": 2,
+   "gm": 57.62,
+   "plus": 40.45
+  },
+  {
+   "cat": "ensemble",
+   "n": 13,
+   "gm": 57.01,
+   "plus": 57.97
+  },
+  {
+   "cat": "sfx",
+   "n": 7,
+   "gm": 39.16,
+   "plus": 33.32
+  }
+ ]
+}

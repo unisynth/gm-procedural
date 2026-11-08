@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gm-procedural — a General MIDI bank made of parameters</title>
+<meta name="description" content="Every wave of the Windows gm.dls rebuilt from a few hundred synthesis parameters, fitted by measuring and listening. 495 waves, ten model families, about 230 KB packed.">
+<meta property="og:title" content="gm-procedural">
+<meta property="og:description" content="A General MIDI bank made of parameters instead of samples. Listen to 70 songs through four banks.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="transport" id="transport">
+  <div class="wrap">
+    <a class="logo" href="#top" aria-label="gm-procedural, back to top"><span class="bars4" aria-hidden="true"><b></b><b></b><b></b><b></b></span>gm-procedural</a>
+    <nav aria-label="Sections">
+      <a href="#problem">Problem</a><a href="#model">Model</a><a href="#fit">Fit</a><a href="#judge">Judge</a><a href="#results">Results</a><a href="#listen">Listen</a><a href="#papers">Papers</a><a href="#thanks">Thanks</a>
+    </nav>
+    <span class="sp"></span>
+    <div class="tlinks"><a class="live" href="songs/"><b aria-hidden="true"></b>Songs</a><a href="sounds/">Sounds</a><a href="https://github.com/unisynth/gm-procedural" aria-label="gm-procedural on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg><span class="lbl">GitHub</span></a></div>
+  </div>
+</header>
+
+<main id="main">
+<div class="hero" id="top">
+  <canvas id="scope" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <p class="presents"><b>robson</b> / Exceed · a <a href="https://unisynth.exceed.hu/">unisynth</a> project</p>
+    <h1 class="word" aria-label="gm procedural"><span class="u">gm</span><span class="s">procedural</span></h1>
+    <div class="hero-low">
+      <div><p class="lede">The General MIDI bank every Windows PC ships, <span class="o">235 instruments</span> and <span class="o">495 waves</span>, rebuilt from
+        <span class="g">synthesis parameters</span> instead of samples. Each wave is fitted by measuring it, then <span class="p">listening</span> to it, until the copy sounds like the original.</p>
+        <div class="cta"><a class="btn pri" href="songs/">Listen to 70 songs <span aria-hidden="true">→</span></a><a class="btn" href="sounds/">All 495 sounds</a><a class="btn" href="https://github.com/unisynth/gm-procedural">unisynth/gm-procedural</a></div></div>
+      <div class="pick">
+        <div class="lbl"><span>model family · drawn behind</span><b id="fam-name">additive</b></div>
+        <div class="pills" role="group" aria-label="Model family drawn in the background">
+          <button aria-pressed="true" data-f="additive">add</button><button aria-pressed="false" data-f="modal">modal</button><button aria-pressed="false" data-f="ks">ks</button><button aria-pressed="false" data-f="fm">fm</button><button aria-pressed="false" data-f="shaker">shaker</button><button aria-pressed="false" data-f="formant">formant</button>
+        </div>
+        <div class="from" id="fam-from">orange: the original · cyan: the model</div>
+      </div>
+    </div>
+  </div>
+  <div class="strip" role="list">
+    <div class="ch" role="listitem"><span class="meter"><i style="--h:96%"></i></span><div class="v">230 KB</div><div class="l">parameters and skeleton, xz-packed, for the 3.44 MB Windows <code>gm.dls</code></div></div>
+    <div class="ch" role="listitem"><span class="meter"><i style="--h:62%"></i></span><div class="v">≤ 512</div><div class="l">numbers per wave, in at most four layers. No sample data, no wavetables, no residuals</div></div>
+    <div class="ch" role="listitem"><span class="meter"><i style="--h:80%"></i></span><div class="v">10</div><div class="l">model families: additive, noise, drum, metal, modal, shaker, FM, formant, Karplus-Strong, subtractive</div></div>
+    <div class="ch" role="listitem"><span class="meter"><i style="--h:40%"></i></span><div class="v">1.14 s</div><div class="l">to generate the whole bank on one thread, bit-identical on every platform and in WebAssembly</div></div>
+    <div class="ch" role="listitem"><span class="meter"><i id="m-a" style="--h:48%"></i></span><div class="v" id="s-ab">239 / 495</div><div class="l">waves with a fit score of 70 or better. The rest is where the work continues</div></div>
+  </div>
+</div>
+
+<section id="problem" style="--acc: var(--b-o)">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <div><span class="tn" aria-hidden="true">01</span><span class="kicker">the problem</span><h2>A 64k intro cannot carry 3.4 MB of samples.</h2></div>
+      <p>General MIDI is the cheapest way to write music: 128 instruments and a drum kit, known to every sequencer. Windows has the bank built in, but <strong>macOS, Linux and the browser do not</strong>, and the file is © Microsoft / Roland, so it cannot be shipped. The answer here: describe every wave with a small, fixed set of synthesis models, and let a <strong>no_std generator</strong> rebuild the bank at load time.</p>
+    </div>
+    <div class="g2">
+      <div class="prose rv">
+        <p><strong>A GM wave is an attack and a short loop.</strong> The long decay is not in the wave: the note's volume envelope lives in the DLS articulation. Piano 1, waves 289–298, are 4.8 k–13.7 k samples: 0.2–0.6 s of attack, then a loop of 155–2272 samples. So a model only has to reproduce the first half second plus one steady loop, not a ten-second piano decay.</p>
+        <p><strong>A loop of L samples is periodic in L, so its spectrum sits on the grid rate/L.</strong> The 1339-sample loop of wave 293 has a 16.5 Hz grid. Stretched piano partials and beating unisons are already quantised to that grid in the original. Every periodic family therefore renders its loop with integer phasors on exactly that grid. The loop is periodic by construction, with no click and nothing lost.</p>
+        <p><strong>The structure is copied; only the waves are synthesised.</strong> Instruments, regions, key ranges, articulation, rates, lengths and loop points come from the original as a skeleton without audio. The output is a normal <code>RIFF 'DLS '</code> buffer: any DLS player, the unisynth sampler, WaveSabre's Adultery and the browser DAW all play it unchanged.</p>
+      </div>
+      <div class="board rv">
+        <svg viewBox="0 0 560 300" role="img" aria-label="A wave is an attack followed by a loop that the player repeats">
+          <defs><clipPath id="cl"><rect x="20" y="40" width="520" height="160"/></clipPath></defs>
+          <path class="w" d="M20 120 H540"/>
+          <g clip-path="url(#cl)">
+            <path id="atk" fill="none" stroke="var(--b-o)" stroke-width="1.6"/>
+            <path id="lp" fill="none" stroke="var(--b-g)" stroke-width="1.6"/>
+            <path id="lp2" fill="none" stroke="var(--b-g)" stroke-width="1.2" opacity=".35"/>
+          </g>
+          <path d="M20 214 H210" stroke="var(--b-o)" stroke-width="2"/><text x="20" y="234" class="d">attack · free-running · fades into the loop</text>
+          <path d="M214 214 H330" stroke="var(--b-g)" stroke-width="2"/><text x="250" y="252" class="d">loop · L samples</text>
+          <path d="M334 214 H540" stroke="var(--b-g)" stroke-width="2" stroke-dasharray="3 5" opacity=".6"/><text x="390" y="234" class="d">repeated by the player</text>
+          <text x="20" y="28">wave 293 · Piano 1 · 22 050 Hz</text>
+          <text x="20" y="284" class="d">loop spectrum: partials only on k · rate / L  (16.5 Hz grid)</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="model" style="--acc: var(--b-g)">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <div><span class="tn" aria-hidden="true">02</span><span class="kicker">the model</span><h2>Ten families. Four layers. 512 numbers.</h2></div>
+      <p>A wave is up to <strong>four layers</strong>, each one of ten fixed model families, placed in a <strong>region</strong>: the exactly periodic <code>sustain</code>, a free-running <code>attack</code> that fades into the loop, or the <code>whole</code> one-shot. Parameters have ranges and defaults, and the build rejects anything over budget, so a parameter file can never smuggle in a waveform.</p>
+    </div>
+    <div class="rack" id="rack"></div>
+    <div class="chain rv" aria-label="Render order">
+      <span style="border-color:var(--b-g)">layers Σ</span><i>→</i><span>gain</span><i>→</i><span>harmonic correction</span><i>→</i><span>time × band <code>tf</code></span><i>→</i><span>fine envelope <code>env</code></span><i>→</i><span>soft knee 0.9</span><i>→</i><span>int16</span>
+    </div>
+    <p class="note rv">Harmonic correction: dB gains at harmonics of f0, exact on the loop (DFT, gain per bin, inverse DFT) and a linear-phase FIR of at least four periods on the attack. <code>tf</code>: 20 log-spaced bands × up to 9 rows from 0 to 640 ms, applied by STFT to the attack only. <code>env</code>: up to 24 points from 0 to 400 ms, finer than the STFT can see.</p>
+    <p class="note rv"><b style="color:var(--fg)">Deterministic by construction.</b> The generator uses only basic IEEE operations: its own <code>sin</code>, <code>exp2</code>, <code>log2</code>, an xorshift RNG seeded with the wave index, and a radix-2 + Bluestein FFT whose twiddles come from the same math. <code>clippy</code> bans <code>f32</code> transcendentals and <code>mul_add</code> in the crate. The bank is byte-identical natively and in WebAssembly, built whole or in part.</p>
+  </div>
+</section>
+
+<section id="fit" style="--acc: var(--playhead)">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <div><span class="tn" aria-hidden="true">03</span><span class="kicker">the fit</span><h2>Measure first. Then search. Keep only improvements.</h2></div>
+      <p><code>gmfit</code> never searches blind. It reads the instrument's <strong>published physics</strong> as priors, analyses the original into a model it can already defend, lets each family propose candidates, and only then hands a narrowed box to <strong>CMA-ES</strong>. Every step must beat the committed result or nothing is written.</p>
+    </div>
+    <div class="board rv">
+      <svg viewBox="0 0 1180 300" role="img" aria-label="Fitting pipeline from the local gm.dls to the generated bank">
+        <path class="w" d="M110 70 H1000 M1065 96 V150 H175 V204 M240 230 H900"/>
+        <path class="pulse" style="stroke:var(--b-o);color:var(--b-o)" d="M110 70 H1065 V150 H175 V230 H900"/>
+        <path class="pulse" style="stroke:var(--b-g);color:var(--b-g);animation-delay:-1.6s" d="M110 70 H1065 V150 H175 V230 H900"/>
+        <g>
+          <rect x="20" y="44" width="90" height="52" rx="8" fill="#0b0c0f" stroke="var(--b-o)"/><text x="65" y="68" text-anchor="middle">gm.dls</text><text x="65" y="85" text-anchor="middle" class="d">local only</text>
+          <rect x="200" y="44" width="130" height="52" rx="8" fill="#0b0c0f" stroke="var(--line)"/><text x="265" y="68" text-anchor="middle">extract</text><text x="265" y="85" text-anchor="middle" class="d">skeleton, no audio</text>
+          <rect x="400" y="44" width="130" height="52" rx="8" fill="#0b0c0f" stroke="var(--line)"/><text x="465" y="68" text-anchor="middle">priors</text><text x="465" y="85" text-anchor="middle" class="d">per GM program</text>
+          <rect x="600" y="44" width="130" height="52" rx="8" fill="#0b0c0f" stroke="var(--line)"/><text x="665" y="68" text-anchor="middle">analyze</text><text x="665" y="85" text-anchor="middle" class="d">pitch · loop · env</text>
+          <rect x="800" y="44" width="130" height="52" rx="8" fill="#0b0c0f" stroke="var(--line)"/><text x="865" y="68" text-anchor="middle">candidates</text><text x="865" y="85" text-anchor="middle" class="d">every family</text>
+          <rect x="1000" y="44" width="130" height="52" rx="8" fill="#0b0c0f" stroke="var(--playhead)"/><text x="1065" y="68" text-anchor="middle">CMA-ES</text><text x="1065" y="85" text-anchor="middle" class="d">seeded, full cov.</text>
+          <rect x="110" y="204" width="130" height="52" rx="8" fill="#0b0c0f" stroke="var(--line)"/><text x="175" y="228" text-anchor="middle">correct</text><text x="175" y="245" text-anchor="middle" class="d">harm · tf · env</text>
+          <rect x="300" y="204" width="130" height="52" rx="8" fill="#0b0c0f" stroke="var(--line)"/><text x="365" y="228" text-anchor="middle">refine</text><text x="365" y="245" text-anchor="middle" class="d">fit ↔ correct</text>
+          <rect x="500" y="204" width="130" height="52" rx="8" fill="#0b0c0f" stroke="var(--b-p)"/><text x="565" y="228" text-anchor="middle">keep if better</text><text x="565" y="245" text-anchor="middle" class="d">score + ear</text>
+          <rect x="700" y="204" width="130" height="52" rx="8" fill="#0b0c0f" stroke="var(--line)"/><text x="765" y="228" text-anchor="middle">waves/NNN.json</text><text x="765" y="245" text-anchor="middle" class="d">committed</text>
+          <rect x="900" y="204" width="150" height="52" rx="8" fill="#0b0c0f" stroke="var(--b-g)"/><text x="975" y="228" text-anchor="middle">gmgen::build()</text><text x="975" y="245" text-anchor="middle" class="d">DLS bytes at load</text>
+        </g>
+        <text x="20" y="290" class="d">The original is read from GM_DLS on the developer's machine. Only structure and parameters are committed.</text>
+      </svg>
+    </div>
+    <ol class="steps">
+      <li class="rv"><h3>Priors from the literature</h3><p>Every GM program and drum key maps to a prior: model kind, families to try, and physical starting points. Piano inharmonicity B, mallet mode ratios, Hammond footages, TR-808 hi-hat square frequencies, cowbell 540/800 Hz, the vowel formants of a choir. Search ranges are narrowed around them.</p></li>
+      <li class="rv"><h3>Analysis before search</h3><p>Pitch on the loop grid, harmonic tables by cluster energy, unison and detune from split partials, inharmonicity, envelopes on windows of at least two periods. Loop vibrato and AM become per-harmonic tables, and the noise floor between partials becomes a periodic noise layer.</p></li>
+      <li class="rv"><h3>Character analysis</h3><p>Not every sound is a tone. Onset detection and Morlet-wavelet band tracking find strikes, trills and glides (modal). Collision statistics and per-band ring times find shakers. Analytic-signal chirp tracking finds FM. LPC and syllables find voices, and the T60 band decay finds plucked strings.</p></li>
+      <li class="rv"><h3>Candidates, then CMA-ES</h3><p>Each family proposes models; all are scored and the best by rank survives. Then a seeded, full-covariance CMA-ES (Hansen's formulation, rank-one + rank-μ, cumulative step size) tunes the explicit scalars inside the unit box. It is deterministic for a seed and runs in parallel.</p></li>
+      <li class="rv"><h3>Analytic corrections</h3><p>What the models cannot express is corrected in closed form within budget: a harmonic gain curve (exact on the loop), a time × band gain grid on the attack, and a fine envelope that catches onset detail finer than the STFT. <code>refine</code> alternates fit and correction.</p></li>
+      <li class="rv"><h3>Keep only improvements</h3><p>A result is written only if its rank, the score minus penalties for audible defects, beats the committed one, and <code>report --check</code> fails if any wave drops. Bulk fits run per GM category, and each round ends with listening.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section id="judge" style="--acc: var(--b-p)">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <div><span class="tn" aria-hidden="true">04</span><span class="kicker">the judge</span><h2>A score for the search. An ear for the score.</h2></div>
+      <p>The optimiser needs one number. But one number averages away exactly what a listener hears: a buzz once per period, a missing noise floor, a 2 dB hole before the loop. So the score carries <strong>defect flags</strong>, and above it sits a <strong>hearing model</strong> built after PEAQ. Each listening round turned what the ear caught into a new measurement.</p>
+    </div>
+    <div class="g2">
+      <div class="rv">
+        <pre class="term"><span class="bar"><i></i><i></i><i></i></span><code><span class="t-c"># similarity of the played signals</span>
+<span class="t-c"># (loop unrolled to 0.5 s, A-weighted)</span>
+<span class="t-f">score</span> = exp(−( d_spec/W₁ + d_onset/W₂
+              + d_env/W₃  + d_loop/W₄
+              + d_per + d_mod ))
+<span class="t-m">rank</span>  = score − 0.1 · character flags
+              − hearing excess
+
+<span class="t-p">$</span> gmfit render 376      <span class="t-c"># standard kick</span>
+<span class="t-o">score 0.721</span>  tier B   flags: lines
+</code></pre>
+        <p class="note">Tiers: <b style="color:var(--ok)">A ≥ 0.85</b>, <b style="color:var(--warn)">B ≥ 0.70</b>; any defect flag drops a wave to C.</p>
+      </div>
+      <ul class="terms rv">
+        <li><b>d_spec</b><span>Mean |dB| of log-mel spectrograms at three STFT sizes, A-weighted per band and floored 50 dB under the peak so inaudible differences do not count.</span></li>
+        <li><b>d_onset</b><span>The same comparison on the first 50 ms only, so a kick's click weighs what the ear gives it instead of being diluted over half a second.</span></li>
+        <li><b>d_env</b><span>RMS envelopes every 2 ms over the attack. On the loop, a held note's shimmer is a texture: smoothed shape plus wobble depth.</span></li>
+        <li><b>d_loop</b><span>Exact DFT magnitudes of one loop period, compared bin by bin up to Nyquist.</span></li>
+        <li><b>d_per · d_mod</b><span>Periodicity (tone versus noise), and the strongest partial's flutter and pitch movement.</span></li>
+        <li><b>flags</b><span><code>pitch_off</code> (5 cents), <code>env_off</code>, <code>loop_click</code>, <code>buzz</code> (per-period peakiness), <code>clipped</code>, <code>tone_off</code>, <code>mod_off</code>, <code>lines</code>, <code>transient_off</code>.</span></li>
+        <li><b>hear</b><span>Outer/middle-ear weighting, half-Bark bands, spreading, forward masking, Zwicker specific loudness. It reports what is <em>added</em> or <em>missing</em> beyond a JND, plus flutter, swell, roughness and ring time. It is calibrated so that two independent noises of the same texture count as identical.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="results" style="--acc: var(--ok)">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <div><span class="tn" aria-hidden="true">05</span><span class="kicker">where it stands</span><h2>Honest numbers.</h2></div>
+      <p>Every wave of both sets is fitted, with no placeholders left. Reeds, pipes, organs and brass score highest: steady harmonic tones are what the families express best. Drums, chromatic percussion, ensembles and sound effects score lowest, because their attacks and noisy textures carry detail the models can only approximate. The scores are strict: a wave can sound right in a song and still score 0.6. Two real banks differ about as much from each other as the procedural bank differs from its target.</p>
+    </div>
+    <div class="g2">
+      <div class="rv">
+        <div class="bars">
+          <div class="sz"><div class="row"><span>Windows <code>gm.dls</code> (16-bit samples)</span><b>3 440 660 B</b></div><div class="tr"><i style="--c:var(--b-o)" data-w="100"></i></div></div>
+          <div class="sz"><div class="row"><span>the same samples, xz -9e</span><b>≈ 2.9 MB</b></div><div class="tr"><i style="--c:var(--b-o)" data-w="84"></i></div></div>
+          <div class="sz"><div class="row"><span>procedural parameters + skeleton, xz -9e</span><b>≈ 230 KB</b></div><div class="tr"><i style="--c:var(--b-g)" data-w="6.8"></i></div></div>
+        </div>
+        <div class="counters" style="margin-top:26px">
+          <div class="ctr"><div class="v" id="c-gm">–</div><div class="l">gen-gm tiers A / B / C of 495 waves (fitted to Windows gm.dls)</div></div>
+          <div class="ctr"><div class="v" id="c-plus" style="color:var(--b-p)">–</div><div class="l">gen-plus tiers A / B / C of 555 waves (fitted to gmplus, 32 kHz, 60 stereo pairs)</div></div>
+          <div class="ctr"><div class="v" id="c-tf">–</div><div class="l">median song timbre distance, gen-gm ↔ gm.dls (dB per band and frame)</div></div>
+          <div class="ctr"><div class="v" id="c-tfs" style="color:var(--b-s)">–</div><div class="l">for scale: gmplus ↔ gm.dls, two real sample banks, same songs</div></div>
+        </div>
+        <p class="caveat"><b>Not done:</b> generation takes 1.14 s natively against a 300 ms budget, and the gmplus set is about 8× more audio. Fitting continues in the repository; these pages are re-rendered from each committed state.</p>
+      </div>
+      <div class="rv">
+        <div class="legend" style="margin:0 0 14px"><span><i style="background:var(--b-g)"></i>gen-gm mean score</span><span><i style="background:var(--b-p)"></i>gen-plus mean score</span></div>
+        <div class="cats" id="cats" aria-label="Mean fit score per GM category"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="listen" style="--acc: var(--b-o)">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <div><span class="tn" aria-hidden="true">06</span><span class="kicker">listen</span><h2>Four banks, one position, one key.</h2></div>
+      <p>Every song is rendered through <strong>four banks</strong> by the same renderer with one gain per row: Windows <span style="color:var(--b-o)">gm.dls</span>, the <span style="color:var(--b-s)">gmplus</span> Sound Canvas soundfont, and the procedural bank fitted to each, <span style="color:var(--b-g)">gen-gm</span> and <span style="color:var(--b-p)">gen-plus</span>. Keys <code>1</code>–<code>4</code> switch banks without losing your place.</p>
+    </div>
+    <div class="g3">
+      <a class="card big rv" href="songs/" style="--acc:var(--b-g)">
+        <span class="k">song selector</span><h3>70 songs</h3>
+        <div class="eq" aria-hidden="true" id="eq"></div>
+        <p>46 DOS game tracks from John Novak's <em>General MIDI showdown</em> (Doom, TIE Fighter, Warcraft II, Descent, Sam &amp; Max…) and 24 from <em>The Very Best of GUS MIDI</em>, picked for instrument coverage. Each has a full mix and every channel solo.</p>
+        <span class="go">Open the song selector →</span>
+      </a>
+      <a class="card rv" href="sounds/" style="--acc:var(--b-p)">
+        <span class="k">sound browser</span><h3>495 sounds</h3>
+        <p>Every wave as the bank stores it, in four versions, with its fit score, the instruments that use it, the gmplus sample it was fitted to, and its open defects.</p>
+        <span class="go">Browse the sounds →</span>
+      </a>
+      <div class="card rv" style="--acc:var(--playhead)">
+        <span class="k">fitting rounds</span><h3>The lab notebook</h3>
+        <ul class="rounds">
+          <li><a href="https://storage.googleapis.com/gm-procedural/gm/pages/pilot/index.html">Pilot A/B, six waves <span>round 4</span></a></li>
+          <li><a href="https://storage.googleapis.com/gm-procedural/gm/pages/drums/index.html">Drum kit <span>pass 4</span></a></li>
+          <li><a href="https://storage.googleapis.com/gm-procedural/gm/pages/hear/index.html">Named drums, hearing model <span>ear</span></a></li>
+          <li><a href="https://storage.googleapis.com/gm-procedural/gm/pages/disagree/index.html">Score versus ear <span>disagreements</span></a></li>
+          <li><a href="https://storage.googleapis.com/gm-procedural/gm/pages/noise/index.html">Cymbal loops <span>noise</span></a></li>
+          <li><a href="https://storage.googleapis.com/gm-procedural/gm/pages/ks/index.html">Karplus-Strong attacks <span>ks</span></a></li>
+          <li><a href="https://storage.googleapis.com/gm-procedural/gm/pages/ab2/index.html">Stream and vibraslap <span>shaker</span></a></li>
+          <li><a href="https://storage.googleapis.com/gm-procedural/gm/pages/ab3/index.html">Water rings <span>shaker</span></a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="papers" style="--acc: var(--lfo)">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <div><span class="tn" aria-hidden="true">07</span><span class="kicker">papers and sources</span><h2>Standing on published physics.</h2></div>
+      <p>Each family, prior and measurement traces back to a paper, a standard or an open-source reference. The per-instrument notes, with every prior, are in <a href="https://github.com/unisynth/gm-procedural/blob/main/research/gm-procedural-instruments.md"><code>research/gm-procedural-instruments.md</code></a>; the full design in <a href="https://github.com/unisynth/gm-procedural/blob/main/docs/synth/gm-procedural.md"><code>docs/synth/gm-procedural.md</code></a>.</p>
+    </div>
+    <div class="refs">
+      <div class="rv">
+        <h3 style="--acc:var(--b-g)">Synthesis models</h3>
+        <ol>
+          <li><b>X. Serra, J. O. Smith</b> 1990 — <em>Spectral Modeling Synthesis: a sound analysis/synthesis system based on a deterministic plus stochastic decomposition.</em> Computer Music Journal 14(4).<span class="use">additive + noise layers; the analysis split</span></li>
+          <li><b>J. Engel, L. Hantrakul, C. Gu, A. Roberts</b> 2020 — <a href="https://arxiv.org/abs/2001.04643"><em>DDSP: Differentiable Digital Signal Processing.</em></a> ICLR.<span class="use">harmonic-plus-noise with per-frame amplitudes</span></li>
+          <li><b>K. Karplus, A. Strong</b> 1983 — <em>Digital synthesis of plucked-string and drum timbres.</em> CMJ 7(2).<span class="use">ks family</span></li>
+          <li><b>D. A. Jaffe, J. O. Smith</b> 1983 — <em>Extensions of the Karplus-Strong plucked-string algorithm.</em> CMJ 7(2).<span class="use">pick comb, dynamics filter, tuning all-pass, stiffness</span></li>
+          <li><b>V. Välimäki, J. Pakarinen, C. Erkut, M. Karjalainen</b> 2006 — <em>Discrete-time modelling of musical instruments.</em> Reports on Progress in Physics 69.<span class="use">string and body models</span></li>
+          <li><b>J. O. Smith, S. A. Van Duyne</b> 1995 — <a href="https://ccrma.stanford.edu/~jos/pdf/svd95.pdf"><em>Commuted piano synthesis.</em></a> ICMC.<span class="use">body folded into the excitation</span></li>
+          <li><b>B. Bank, S. Zambon, F. Fontana</b> 2010 — <em>A modal-based real-time piano synthesizer.</em> IEEE TASLP 18(4).<span class="use">piano priors, modal family</span></li>
+          <li><b>P. R. Cook</b> 1997 — <em>Physically Informed Sonic Modeling (PhISM): synthesis of percussive sounds.</em> CMJ 21(3).<span class="use">shaker family (PhISEM)</span></li>
+          <li><b>J. M. Chowning</b> 1973 — <em>The synthesis of complex audio spectra by means of frequency modulation.</em> JAES 21(7).<span class="use">fm family; electric piano and tubular-bell presets</span></li>
+          <li><b>J.-C. Risset</b> 1965 — <em>Computer study of trumpet tones.</em> Bell Labs.<span class="use">brightness follows amplitude (additive <code>tilt</code>)</span></li>
+          <li><b>M. R. Schroeder</b> 1970 — <em>Synthesis of low-peak-factor signals and binary sequences with low autocorrelation.</em> IEEE Trans. Inf. Theory 16(1).<span class="use">default partial phases, and why ensembles need random ones</span></li>
+          <li><b>V. Välimäki, A. Huovilainen</b> 2007 — <em>Antialiasing oscillators in subtractive synthesis.</em> IEEE Signal Processing Magazine 24(2).<span class="use">PolyBLEP pulses (metal, formant)</span></li>
+          <li><b>R. Bristow-Johnson</b> — <em>Cookbook formulae for audio EQ biquad filter coefficients.</em><span class="use">every filter; subtractive applies its complex response per harmonic</span></li>
+        </ol>
+        <h3 style="--acc:var(--b-o)">Instrument acoustics</h3>
+        <ol>
+          <li><b>N. H. Fletcher, T. D. Rossing</b> — <em>The Physics of Musical Instruments.</em> Springer.<span class="use">membrane and bar mode ratios, steelpans, bells</span></li>
+          <li><b>G. Reid</b> 1999–2004 — <em>Synth Secrets</em>, parts 23–59. Sound On Sound.<span class="use">per-category recipes: drums 33–41, strings 48–51, pipes 52–54</span></li>
+          <li><b>C. Perng, J. O. Smith, T. D. Rossing</b> 2010 — <em>Harpsichord sound synthesis using a physical plectrum model.</em> DAFx.<span class="use">harpsichord and clavinet</span></li>
+        </ol>
+      </div>
+      <div class="rv">
+        <h3 style="--acc:var(--b-p)">Measurement and hearing</h3>
+        <ol>
+          <li><b>ITU-R BS.1387</b> — <em>Method for objective measurements of perceived audio quality (PEAQ)</em>; T. Thiede et al. 2000, JAES 48(1/2).<span class="use">ear model, ModDiff flutter</span></li>
+          <li><b>E. Zwicker, H. Fastl</b> — <em>Psychoacoustics: Facts and Models.</em> Springer.<span class="use">specific loudness, Bark bands, masking</span></li>
+          <li><b>E. Terhardt</b> 1979 — <em>Calculating virtual pitch.</em> Hearing Research 1.<span class="use">outer and middle ear weighting</span></li>
+          <li><b>J. H. McDermott, E. P. Simoncelli</b> 2011 — <em>Sound texture perception via statistics of the auditory periphery.</em> Neuron 71(5).<span class="use">noise is a texture, not a waveform: compare statistics</span></li>
+          <li><b>ITU-R BS.1770 / EBU R 128</b> — loudness in LUFS.<span class="use">song level matching</span></li>
+          <li><b>D. J. Hermes</b> 1988 — <em>Measurement of pitch by subharmonic summation.</em> JASA 83(1).<span class="use">syllable pitch in voices</span></li>
+          <li><b>J. Makhoul</b> 1975 — <em>Linear prediction: a tutorial review.</em> Proc. IEEE 63(4).<span class="use">formant analysis</span></li>
+          <li><b>C. Torrence, G. P. Compo</b> 1998 — <em>A practical guide to wavelet analysis.</em> BAMS 79(1).<span class="use">Morlet band tracking: trills, strikes, decays</span></li>
+        </ol>
+        <h3 style="--acc:var(--playhead)">Search and numerics</h3>
+        <ol>
+          <li><b>N. Hansen</b> 2016 — <a href="https://arxiv.org/abs/1604.00772"><em>The CMA Evolution Strategy: a tutorial.</em></a><span class="use">the optimiser, as formulated there</span></li>
+          <li><b>L. Bluestein</b> 1970 — <em>A linear filtering approach to the computation of the discrete Fourier transform.</em> IEEE Trans. Audio Electroacoust. 18(4).<span class="use">any-length deterministic FFT for loop DFTs</span></li>
+        </ol>
+        <h3 style="--acc:var(--voice)">Formats and open code</h3>
+        <ol>
+          <li><b>MIDI Manufacturers Association</b> — <em>Downloadable Sounds Level 1 / 2</em>; <em>General MIDI 1.</em><span class="use">bank layout, articulation connections</span></li>
+          <li><b>E-mu / Creative</b> — <em>SoundFont 2.04 specification.</em><span class="use">reading the gmplus targets</span></li>
+          <li><b>P. Cook, G. Scavone</b> — <a href="https://github.com/thestk/stk">STK, the Synthesis ToolKit</a>.<span class="use">Modal, Shakers, Rhodey, TubeBell, Flute, BlowBotl</span></li>
+          <li><b>É. Gillet</b> — <a href="https://github.com/pichenettes/eurorack">Mutable Instruments Plaits</a> (MIT).<span class="use">analog and synthetic drum engines, hi-hat</span></li>
+          <li><b>Csound</b> — <code>phisem</code>, <code>fof</code>, the vowel formant tables.<span class="use">shakers, choir formants</span></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="thanks" style="--acc: var(--voice)">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <div><span class="tn" aria-hidden="true">08</span><span class="kicker">provenance and thanks</span><h2>What it was measured against.</h2></div>
+      <p>Neither sample bank is in the repository or on this site. They are read from the developer's own copies. The repository holds structure and fitted parameters only; the audio here is our own render, published for comparison.</p>
+    </div>
+    <div class="teams">
+      <article class="team rv" style="--acc: var(--b-o)" data-mark="DLS"><div class="who">the original</div><h3>Microsoft / Roland</h3><p class="made">gm.dls · 1996 · © Microsoft / Roland</p>
+        <p class="took">Every Windows PC since 98 has made General MIDI sound like this: a GS sound set Roland licensed to Microsoft, in 3.4 MB. It is the target of gen-gm, read from a local copy and never shipped.</p></article>
+      <article class="team rv" style="--acc: var(--b-s)" data-mark="SC"><div class="who">the better reference</div><h3>Distortion Dog</h3><p class="made">gmplus · Release 1 · fan soundfont</p>
+        <p class="took">A soundfont built from Roland Sound Canvas samples, longer and cleaner than the Windows bank. gen-plus is fitted to it at 32 kHz, including its layered and stereo zones.</p></article>
+      <article class="team rv" style="--acc: var(--b-g)" data-mark="DOS"><div class="who">the test songs</div><h3>John Novak</h3><p class="made"><a href="https://archive.org/details/DOS-Gaming-General-MIDI-Comparison">Grand MS-DOS gaming General MIDI showdown</a></p>
+        <p class="took">46 game soundtracks collected for comparing GM devices. That is exactly the job here, so they became the main test set.</p></article>
+      <article class="team rv" style="--acc: var(--b-p)" data-mark="GUS"><div class="who">the coverage set</div><h3>The Very Best of GUS MIDI</h3><p class="made"><a href="https://archive.org/details/BESTMID6">archive.org BESTMID1–7</a> · 1994</p>
+        <p class="took">About 720 files hand-picked in 1994 as ones that sound good on any GM card. 24 were taken greedily, each adding the most instruments not yet played.</p></article>
+    </div>
+    <p class="note rv">Song credits go to their composers and arrangers, named in the song selector. The renders are for comparison only and are removed on request.
+      <b style="color:var(--fg)">Tools:</b> Rust, Bun, Apple AUMIDISynth (renderer), LAME, Google Cloud Storage. Part of <a href="https://unisynth.exceed.hu/">unisynth</a>, the 64k-intro synth this bank was made for.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div><h4>gm-procedural</h4><p style="margin:0;max-width:46ch">A General MIDI bank made of parameters, by <b style="color:var(--fg)">robson / Exceed</b>, written in Rust. Status: every wave fitted; fidelity and speed still improving.</p></div>
+      <div><h4>Inside</h4><ul><li><code>dls</code> · DLS reader / writer</li><li><code>gmgen</code> · the generator (no_std)</li><li><code>gmfit</code> · the fitter</li><li><code>gm-songs</code> · four-way A/B</li></ul></div>
+      <div><h4>Listen</h4><ul><li><a href="songs/">songs</a> · 70 × 4 banks</li><li><a href="sounds/">sounds</a> · 495 waves</li><li><a href="https://storage.googleapis.com/gm-procedural/index.html">raw pages</a></li></ul></div>
+      <div><h4>Source</h4><ul><li><a href="https://github.com/unisynth/gm-procedural">github.com/unisynth/gm-procedural</a></li><li>code: MIT</li><li>page and words: © robson / Exceed</li><li>sister project: <a href="https://unisynth.exceed.hu/">unisynth</a></li></ul></div>
+    </div>
+    <div class="sig" aria-hidden="true">exceed · 2026</div>
+  </div>
+</footer>
+
+<script type="module" src="assets/home.js"></script>
+</body>
+</html>
