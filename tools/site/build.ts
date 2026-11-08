@@ -110,6 +110,18 @@ async function assets() {
   const r = await Bun.build({ entrypoints: [join(import.meta.dir, "live.ts")], outdir: dst, target: "browser", format: "esm", minify: true, naming: "live.js", define });
   if (!r.success) throw new Error(r.logs.join("\n"));
   copyFileSync(join(ROOT, "node_modules/spessasynth_lib/dist/spessasynth_processor.min.js"), join(dst, "spessasynth_processor.min.js"));
+  icons();
+}
+
+/** Raster icons from site/assets/icon.svg (binaries, so bucket only: site/icon/): favicon PNG, apple-touch, manifest
+ *  sizes, favicon.ico (16/32/48). Needs rsvg-convert + ImageMagick (`magick`). */
+function icons() {
+  const svg = join(ROOT, "site/assets/icon.svg"), out = join(AUDIO, "icon");
+  mkdirSync(out, { recursive: true });
+  const run = (cmd: string[]) => { const r = Bun.spawnSync(cmd, { stderr: "pipe" }); if (r.exitCode) throw new Error(`${cmd[0]}: ${r.stderr}`); };
+  for (const s of [16, 32, 48, 180, 192, 512]) run(["rsvg-convert", "-w", `${s}`, "-h", `${s}`, svg, "-o", join(out, `icon-${s}.png`)]);
+  run(["magick", ...[16, 32, 48].map((s) => join(out, `icon-${s}.png`)), join(out, "favicon.ico")]);
+  copyFileSync(svg, join(out, "icon.svg"));
 }
 
 if (import.meta.main) {
@@ -119,5 +131,5 @@ if (import.meta.main) {
   writeFileSync(join(OUT, "waves.json"), JSON.stringify({ audio: BUCKET, waves: w }));
   writeFileSync(join(OUT, "stats.json"), JSON.stringify(st, null, 1));
   await assets();
-  console.log(`site: ${s.length} songs, ${w.length} waves, gm A/B/C ${st.gm.A}/${st.gm.B}/${st.gm.C}; live.js, processor; gmgen.wasm, banks/gen-gm.dls → build/site-audio (publish to the bucket)`);
+  console.log(`site: ${s.length} songs, ${w.length} waves, gm A/B/C ${st.gm.A}/${st.gm.B}/${st.gm.C}; live.js, processor; gmgen.wasm, banks/gen-gm.dls, icon/ → build/site-audio (publish to the bucket)`);
 }

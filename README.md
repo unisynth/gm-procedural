@@ -1,3 +1,5 @@
+<img src="site/assets/icon.svg" alt="gm-procedural icon: a MIDI 5-pin socket in unisynth colours" width="96" align="right">
+
 # gm-procedural
 
 A General MIDI sound bank rebuilt from synthesis parameters instead of samples.

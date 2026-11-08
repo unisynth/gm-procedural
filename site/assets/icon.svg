@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="gm-procedural">
+  <title>gm-procedural: a MIDI 5-pin DIN socket in unisynth colours</title>
+  <!-- tile: unisynth bg-2 with line border -->
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="#121417" stroke="#2c3139" stroke-width="8"/>
+  <!-- DIN shell: voice rim, bg face -->
+  <circle cx="256" cy="268" r="176" fill="#0e1013" stroke="#8fa6c4" stroke-width="24"/>
+  <!-- key notch cut through the rim at the top -->
+  <rect x="230" y="70" width="52" height="58" rx="8" fill="#0e1013"/>
+  <!-- five pins on a half circle at 45° steps, one per unisynth module colour -->
+  <g stroke="#0e1013" stroke-width="6">
+    <circle cx="150" cy="268" r="30" fill="#ee7aa8"/> <!-- 180° mod  -->
+    <circle cx="181" cy="343" r="30" fill="#3fc1c9"/> <!-- 135° filt -->
+    <circle cx="256" cy="374" r="30" fill="#6fd08c"/> <!--  90° env  -->
+    <circle cx="331" cy="343" r="30" fill="#a98bf5"/> <!--  45° lfo  -->
+    <circle cx="362" cy="268" r="30" fill="#f0a04b"/> <!--   0° osc  -->
+  </g>
+</svg>

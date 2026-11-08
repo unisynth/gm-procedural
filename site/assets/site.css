@@ -29,11 +29,8 @@ code { font-size: .86em; background: var(--panel-2); border: 1px solid var(--lin
 .transport { position: fixed; inset: 0 0 auto 0; z-index: 20; transition: background .3s, border-color .3s; border-bottom: 1px solid transparent; }
 .transport.solid, .transport.always { background: color-mix(in srgb, var(--bg-2) 88%, transparent); backdrop-filter: blur(10px); border-color: var(--line); }
 .transport .wrap { display: flex; align-items: center; gap: 16px; height: 52px; }
+.logo .mark { display: block; flex: none; }
 .logo { font: 600 15px var(--mono); text-decoration: none; display: flex; align-items: center; gap: 9px; white-space: nowrap; }
-.bars4 { display: inline-flex; gap: 2px; align-items: end; height: 13px; }
-.bars4 b { width: 4px; border-radius: 1px; }
-.bars4 b:nth-child(1) { background: var(--b-o); height: 13px; } .bars4 b:nth-child(2) { background: var(--b-s); height: 10px; }
-.bars4 b:nth-child(3) { background: var(--b-g); height: 12px; } .bars4 b:nth-child(4) { background: var(--b-p); height: 8px; }
 .transport nav { display: flex; gap: 2px; margin-left: 10px; }
 .transport nav a { font-size: 13px; color: var(--dim); text-decoration: none; padding: 5px 10px; border-radius: 5px; }
 .transport nav a:hover, .transport nav a[aria-current] { color: var(--fg); background: var(--sel); }

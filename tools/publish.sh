@@ -5,6 +5,7 @@
 #   site/banks/gmplus.sf2, gen-gm.dls, gen-plus.dls        live banks: gen-gm is loaded by default (the wasm's output,
 #                                                          sha1-checked by the page); gen-plus is a fallback (the page builds it)
 #   site/gmgen.wasm                                        the bank generator the page runs (all binaries live here, not on Pages)
+#   site/icon/                                             icon renders (png sizes, favicon.ico, icon.svg) from site/assets/icon.svg
 #   gm/pages/<name>/, index.html                           hand-made fitting-round pages (pages/) + their clips (build/gm/<name>/)
 # Never uploads gm.dls itself, logs or temporary files. Usage: tools/publish.sh [--dry-run]
 set -euo pipefail
@@ -24,6 +25,8 @@ if [[ -z "$DRY" ]]; then
   gcloud storage cp build/gm-plus/gen.dls "$B/site/banks/gen-plus.dls"
   # the bank generator the site runs in the browser (bun tools/site/build.ts puts it here); fetched as ?v=<hash>
   gcloud storage cp --content-type=application/wasm "$A/gmgen.wasm" "$B/site/gmgen.wasm"
+  # icons (bun tools/site/build.ts renders them from site/assets/icon.svg)
+  gcloud storage rsync -r "$A/icon" "$B/site/icon"
 fi
 
 # Hand-made fitting-round pages: HTML from pages/<name>/, audio + sheets from build/gm/<name>/.
