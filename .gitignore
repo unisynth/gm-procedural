@@ -8,3 +8,4 @@ build/
 *.mid
 *.wav
 *.mp3
+site/assets/*.wasm

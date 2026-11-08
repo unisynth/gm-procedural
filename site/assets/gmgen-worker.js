@@ -1,10 +1,11 @@
 // Builds a procedural bank in the browser: gmgen compiled to WebAssembly (crates/gmgen-wasm), wave by wave.
-// message in: { set: 0 | 1 }   (0 = gen-gm, the gm.dls layout at 22 kHz; 1 = gen-plus, the gmplus layout at 32 kHz)
+// message in: { set: 0 | 1, wasm: url }   (0 = gen-gm, the gm.dls layout at 22 kHz; 1 = gen-plus, the gmplus layout at 32 kHz;
+// the wasm is served from the bucket, not from GitHub Pages: binaries live in Google Storage)
 // messages out: { progress: 0..1, wave, waves } … then { done: ArrayBuffer (DLS), ms }
 let wasm;
-self.onmessage = async ({ data: { set } }) => {
+self.onmessage = async ({ data: { set, wasm: url } }) => {
   try {
-    wasm ??= (await WebAssembly.instantiateStreaming(fetch(new URL("gmgen.wasm", import.meta.url)), {})).instance.exports;
+    wasm ??= (await WebAssembly.instantiate(await (await fetch(url)).arrayBuffer(), {})).instance.exports;
     const t = performance.now();
     const n = wasm.begin(set);
     for (let i = 0; i < n; i++) {

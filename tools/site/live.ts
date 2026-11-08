@@ -8,6 +8,9 @@ export type Progress = (state: { bank: LiveBank; label: string; frac: number }) 
 export const BUCKET = "https://storage.googleapis.com/gm-procedural/site/";
 const WORKLET = new URL("./spessasynth_processor.min.js", import.meta.url).href;
 const WORKER = new URL("./gmgen-worker.js", import.meta.url).href;
+// gmgen.wasm is a binary, so it lives in the bucket; the query is its content hash (set at bundle time) to bust caches
+declare const GMGEN_WASM_HASH: string;
+const GMGEN_WASM = `${BUCKET}gmgen.wasm?v=${GMGEN_WASM_HASH}`;
 
 const buffers: Partial<Record<LiveBank, Promise<ArrayBuffer>>> = {};
 export const built: Partial<Record<LiveBank, number>> = {}; // ms to build (procedural banks)
@@ -22,7 +25,7 @@ function generate(set: 0 | 1, bank: LiveBank, progress?: Progress): Promise<Arra
       else progress?.({ bank, label: `building ${name} in your browser · wave ${data.wave}/${data.waves}`, frac: data.progress });
     };
     w.onerror = (e) => { w.terminate(); reject(e); };
-    w.postMessage({ set });
+    w.postMessage({ set, wasm: GMGEN_WASM });
   });
 }
 

@@ -1,5 +1,5 @@
 // Site audio + metrics with the same engine the site plays live (spessasynth_core):
-//   bun tools/spessa/render.ts songs [--only re] [--part i/n]   → build/site-audio/songs/<id>/{mix,ch<N>}.mp3 (gm.dls only) + build/site-audio/results.json
+//   bun tools/spessa/render.ts songs [--only re] [--part i/n] [--max n] [--force]   → build/site-audio/songs/<id>/{mix,ch<N>}.mp3 (gm.dls only) + build/site-audio/results.json
 //   bun tools/spessa/render.ts waves               → build/site-audio/waves/NNN.mp3 (gm.dls note per wave) + waves.json (note per wave)
 // gm.dls is copyrighted, so only its renders are published; gen-gm, gmplus and gen-plus play live in the browser from
 // the MIDI. Metrics (tf, ΔLUFS) still compare all four banks, rendered here and discarded.
@@ -59,7 +59,8 @@ const four = (a: Record<Key, Audio>) => {
 
 type Sel = { id: string; file: string; parts: { ch: number; drums: boolean; notes: number }[] };
 
-async function songs(only?: RegExp, part = "0/1") {
+async function songs(only?: RegExp, part = "0/1", max = Infinity) {
+  let rendered = 0;
   const [pi, pn] = part.split("/").map(Number);
   const B = banks();
   const sel = (JSON.parse(readFileSync(join(ROOT, "build/gm/songs/selection.json"), "utf8")) as Sel[]).filter((s, i) => (!only || only.test(s.id)) && i % pn === pi);
@@ -68,11 +69,16 @@ async function songs(only?: RegExp, part = "0/1") {
   const results: Record<string, unknown> = existsSync(resPath) ? JSON.parse(readFileSync(resPath, "utf8")) : {};
   mkdirSync(join(OUT, "midi"), { recursive: true });
   for (const [k, s] of sel.entries()) {
+    if (results[s.id] && !process.argv.includes("--force")) continue; // resumable: finished songs are skipped
+    // the engine keeps ~100–200 MB per song alive; --max N ends the process (exit 10 = more to do) so a loop can restart it
+    if (rendered++ >= max) process.exit(10);
     const t0 = performance.now();
     const dir = join(OUT, "songs", s.id);
     mkdirSync(dir, { recursive: true });
     const bytes = readFileSync(join(ROOT, s.file));
-    writeFileSync(join(OUT, "midi", `${s.id}.mid`), bytes);
+    const midPath = join(OUT, "midi", `${s.id}.mid`);
+    rmSync(midPath, { force: true }); // archive files are read-only; replace, never write through
+    writeFileSync(midPath, bytes);
     const midi = BasicMIDI.fromArrayBuffer(ab(join(ROOT, s.file)));
     const keys: Key[] = ["o", "s", "g", "p"];
     const mix = Object.fromEntries(keys.map((b) => [b, renderMidi(B[b], midi)])) as Record<Key, Audio>;
@@ -145,7 +151,8 @@ if (import.meta.main) {
   const [cmd] = process.argv.slice(2);
   const i = process.argv.indexOf("--only");
   const pa = process.argv.indexOf("--part");
-  if (cmd === "songs") await songs(i > 0 ? new RegExp(process.argv[i + 1]) : undefined, pa > 0 ? process.argv[pa + 1] : "0/1");
+  const mx = process.argv.indexOf("--max");
+  if (cmd === "songs") await songs(i > 0 ? new RegExp(process.argv[i + 1]) : undefined, pa > 0 ? process.argv[pa + 1] : "0/1", mx > 0 ? +process.argv[mx + 1] : Infinity);
   else if (cmd === "waves") await waves();
   else console.log("usage: bun tools/spessa/render.ts songs [--only re] | waves");
 }

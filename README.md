@@ -22,7 +22,7 @@ Raw listening pages: https://storage.googleapis.com/gm-procedural/index.html
 | `tools/publish.sh` | uploads pages + renders to the public bucket |
 | `tools/spessa/` | renders gm.dls audio and measures all four banks with the site's own engine (SpessaSynth) |
 | `tools/site/` | builds `site/data/*.json`, bundles the live player (`live.ts`), copies `gmgen.wasm` |
-| `site/` | GitHub Pages site (`gm-procedural.exceed.hu`): landing page, `songs/`, `sounds/`; audio streams from the bucket |
+| `site/` | GitHub Pages site (`gm-procedural.exceed.hu`): landing page, `songs/`, `sounds/`; HTML/CSS/JS only, every binary (audio, MIDI, banks, `gmgen.wasm`) from the bucket |
 | `pages/` | hand-made listening pages of the fitting rounds |
 | `docs/synth/gm-procedural.md` | formats, render pipeline, families and parameter tables, commands |
 | `research/` | instrument research, pilot results |
@@ -75,8 +75,8 @@ cargo build --profile fast -p gmgen-wasm --target wasm32-unknown-unknown
 bun tools/spessa/render.ts waves                     # gm.dls note per wave → build/site-audio/waves/
 bun tools/spessa/render.ts songs --part 0/2 &        # gm.dls mix + solos, metrics vs all four banks (≈1.6 GB RAM
 bun tools/spessa/render.ts songs --part 1/2; wait    #   per process: never more than two)
-tools/publish.sh                                     # audio, MIDI, gmplus.sf2, fallback banks → gs://gm-procedural/site/
-bun tools/site/build.ts                              # site/data/*.json, site/assets/{live.js, gmgen.wasm, worklet}
+bun tools/site/build.ts                              # site/data/*.json, site/assets/{live.js, worklet}; gmgen.wasm → build/site-audio/
+tools/publish.sh                                     # audio, MIDI, gmplus.sf2, fallback banks, gmgen.wasm → gs://gm-procedural/site/
 git commit site/ && git push                         # .github/workflows/pages.yml deploys site/
 ```
 

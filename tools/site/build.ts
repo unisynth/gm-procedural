@@ -1,5 +1,5 @@
 // Builds the GitHub Pages site's generated parts:
-//   bun tools/site/build.ts   → site/data/{songs,waves,stats}.json, site/assets/{live.js, spessasynth_processor.min.js, gmgen.wasm}
+//   bun tools/site/build.ts   → site/data/{songs,waves,stats}.json, site/assets/{live.js, spessasynth_processor.min.js}, build/site-audio/gmgen.wasm (→ bucket)
 // Inputs: build/site-audio/{results*.json, waves.json} (tools/spessa/render.ts), build/gm/songs/selection.json,
 // build/gm/songs/waves/{gm,plus}/index.json (`gmfit dump`, scores and flags), assets/ (committed), and
 // target/wasm32-unknown-unknown/fast/gmgen_wasm.wasm (`cargo build --profile fast -p gmgen-wasm --target wasm32-unknown-unknown`).
@@ -91,12 +91,15 @@ export function stats() {
 
 async function assets() {
   const dst = join(ROOT, "site/assets");
-  const r = await Bun.build({ entrypoints: [join(import.meta.dir, "live.ts")], outdir: dst, target: "browser", format: "esm", minify: true, naming: "live.js" });
-  if (!r.success) throw new Error(r.logs.join("\n"));
-  copyFileSync(join(ROOT, "node_modules/spessasynth_lib/dist/spessasynth_processor.min.js"), join(dst, "spessasynth_processor.min.js"));
+  // binaries go to the bucket (tools/publish.sh uploads build/site-audio/gmgen.wasm); the page only gets JS/CSS/HTML
   const wasm = join(ROOT, "target/wasm32-unknown-unknown/fast/gmgen_wasm.wasm");
   if (!existsSync(wasm)) throw new Error("build gmgen-wasm first: cargo build --profile fast -p gmgen-wasm --target wasm32-unknown-unknown");
-  copyFileSync(wasm, join(dst, "gmgen.wasm"));
+  mkdirSync(AUDIO, { recursive: true });
+  copyFileSync(wasm, join(AUDIO, "gmgen.wasm"));
+  const hash = new Bun.CryptoHasher("sha1").update(readFileSync(wasm)).digest("hex").slice(0, 12);
+  const r = await Bun.build({ entrypoints: [join(import.meta.dir, "live.ts")], outdir: dst, target: "browser", format: "esm", minify: true, naming: "live.js", define: { GMGEN_WASM_HASH: JSON.stringify(hash) } });
+  if (!r.success) throw new Error(r.logs.join("\n"));
+  copyFileSync(join(ROOT, "node_modules/spessasynth_lib/dist/spessasynth_processor.min.js"), join(dst, "spessasynth_processor.min.js"));
 }
 
 if (import.meta.main) {
@@ -106,5 +109,5 @@ if (import.meta.main) {
   writeFileSync(join(OUT, "waves.json"), JSON.stringify({ audio: BUCKET, waves: w }));
   writeFileSync(join(OUT, "stats.json"), JSON.stringify(st, null, 1));
   await assets();
-  console.log(`site: ${s.length} songs, ${w.length} waves, gm A/B/C ${st.gm.A}/${st.gm.B}/${st.gm.C}; live.js, processor, gmgen.wasm`);
+  console.log(`site: ${s.length} songs, ${w.length} waves, gm A/B/C ${st.gm.A}/${st.gm.B}/${st.gm.C}; live.js, processor; gmgen.wasm → build/site-audio (publish to the bucket)`);
 }
