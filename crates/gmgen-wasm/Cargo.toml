@@ -1,0 +1,13 @@
+[package]
+name = "gmgen-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "gmgen for the browser: builds the gm or plus procedural bank wave by wave behind a plain C ABI (site/assets/gmgen.wasm)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+gmgen = { path = "../gmgen", features = ["plus"] }
+dls = { path = "../dls", features = ["write"] }

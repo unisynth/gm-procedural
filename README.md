@@ -15,11 +15,13 @@ Raw listening pages: https://storage.googleapis.com/gm-procedural/index.html
 |---|---|
 | `crates/dls` | `no_std` zero-copy DLS1/2 reader; DLS writer behind feature `write` |
 | `crates/gmgen` | `no_std + alloc` bank generator: `gmgen::build(None) -> Vec<u8>` (DLS bytes), feature `plus` for the gmplus set |
+| `crates/gmgen-wasm` | `gmgen` for the browser: builds a bank wave by wave behind a C ABI (`site/assets/gmgen.wasm`) |
 | `crates/gmfit` | host fitter: `extract`, `analyze`, `fit`, `correct`, `refine`, `bulk`, `render`, `sweep`, `hear`, `report`, `dump`, `bank` |
 | `assets/gm`, `assets/gm-plus` | bank structure (no audio) + per-wave parameters + committed scores |
 | `tools/gm-songs` | full-song four-way A/B: SMF parser, AUMIDISynth renderer, metrics, page generator, Range server |
 | `tools/publish.sh` | uploads pages + renders to the public bucket |
-| `tools/site/` | builds `site/data/*.json` from the renders (`bun tools/site/build.ts`) |
+| `tools/spessa/` | renders gm.dls audio and measures all four banks with the site's own engine (SpessaSynth) |
+| `tools/site/` | builds `site/data/*.json`, bundles the live player (`live.ts`), copies `gmgen.wasm` |
 | `site/` | GitHub Pages site (`gm-procedural.exceed.hu`): landing page, `songs/`, `sounds/`; audio streams from the bucket |
 | `pages/` | hand-made listening pages of the fitting rounds |
 | `docs/synth/gm-procedural.md` | formats, render pipeline, families and parameter tables, commands |
@@ -63,12 +65,19 @@ tools/publish.sh --dry-run && tools/publish.sh     # → gs://gm-procedural (pub
 
 ## Update the site
 
+gm.dls is copyrighted, so the site plays it as recordings; gmplus, gen-gm and gen-plus play live in the browser from
+the MIDI files (SpessaSynth), the procedural banks built in the page by `gmgen.wasm`.
+
 ```bash
-bun tools/gm-songs/run.ts render --force   # songs × 4 banks (after a bank change; see docs)
-bun tools/gm-songs/run.ts waves            # per-wave clips
-tools/publish.sh                           # audio → gs://gm-procedural
-bun tools/site/build.ts                    # site/data/*.json
-git commit site/ && git push               # .github/workflows/pages.yml deploys site/
+export GM_DLS=… GMPLUS_SF2=…
+cargo run --profile fast -p gmfit -- bank && cargo run --profile fast -p gmfit -- --set plus bank -o build/gm-plus/gen.dls
+cargo build --profile fast -p gmgen-wasm --target wasm32-unknown-unknown
+bun tools/spessa/render.ts waves                     # gm.dls note per wave → build/site-audio/waves/
+bun tools/spessa/render.ts songs --part 0/2 &        # gm.dls mix + solos, metrics vs all four banks (≈1.6 GB RAM
+bun tools/spessa/render.ts songs --part 1/2; wait    #   per process: never more than two)
+tools/publish.sh                                     # audio, MIDI, gmplus.sf2, fallback banks → gs://gm-procedural/site/
+bun tools/site/build.ts                              # site/data/*.json, site/assets/{live.js, gmgen.wasm, worklet}
+git commit site/ && git push                         # .github/workflows/pages.yml deploys site/
 ```
 
 ## Provenance

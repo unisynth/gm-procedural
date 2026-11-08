@@ -548,10 +548,15 @@ hat 0.65, Bass 0.89, Strings 0.67 (loop vibrato + AM), Piano 0.75 (stiff string 
 
 ## Publishing and consumers
 
-The listening pages and their renders are public at `https://storage.googleapis.com/gm-procedural/index.html`
-(bucket `gs://gm-procedural`, project `judo-ng`). `tools/publish.sh` uploads `build/gm/songs` (mp3, pages, metrics),
-the hand-made round pages (`pages/<name>/index.html` + their clips from `build/gm/<name>/`) and `pages/index.html`.
-It never uploads banks, MIDI, logs or the renderer binary.
+Site: <https://gm-procedural.exceed.hu/> (`site/`, GitHub Pages). Windows `gm.dls` is copyrighted, so it is only
+published as recordings: each song's mix and every channel solo, and one note per wave, rendered by
+`tools/spessa/render.ts` with SpessaSynth (`spessasynth_core`). gmplus, gen-gm and gen-plus play live in the browser
+from the MIDI files with the same engine (`spessasynth_lib`), so an A/B switch changes only the bank. The procedural
+banks are generated in the page by `gmgen` compiled to WebAssembly (`crates/gmgen-wasm`, byte-identical to the
+native build; gm ≈ 1.4 s, plus ≈ 12 s); prebuilt copies in the bucket are only a fallback. SpessaSynth ignores the
+`stpr` stereo-pair chunk, so the 60 stereo gen-plus waves play their left wave. Metrics (`tf`, ΔLUFS) compare all four
+banks rendered offline. Audio, MIDI and gmplus.sf2: public bucket `gs://gm-procedural/site/` (project `judo-ng`,
+CORS `*`), `tools/publish.sh`. The older AUMIDISynth four-way pages (`tools/gm-songs`) remain a local tool.
 
 64k depends on `dls` and `gmgen` by git revision (`[workspace.dependencies]` in its root `Cargo.toml`); bumping the
 `rev` there picks up a new bank.

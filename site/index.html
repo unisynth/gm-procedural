@@ -46,7 +46,7 @@
     <div class="ch" role="listitem"><span class="meter"><i style="--h:96%"></i></span><div class="v">230 KB</div><div class="l">parameters and skeleton, xz-packed, for the 3.44 MB Windows <code>gm.dls</code></div></div>
     <div class="ch" role="listitem"><span class="meter"><i style="--h:62%"></i></span><div class="v">≤ 512</div><div class="l">numbers per wave, in at most four layers. No sample data, no wavetables, no residuals</div></div>
     <div class="ch" role="listitem"><span class="meter"><i style="--h:80%"></i></span><div class="v">10</div><div class="l">model families: additive, noise, drum, metal, modal, shaker, FM, formant, Karplus-Strong, subtractive</div></div>
-    <div class="ch" role="listitem"><span class="meter"><i style="--h:40%"></i></span><div class="v">1.14 s</div><div class="l">to generate the whole bank on one thread, bit-identical on every platform and in WebAssembly</div></div>
+    <div class="ch" role="listitem"><span class="meter"><i style="--h:40%"></i></span><div class="v">1.4 s</div><div class="l">to build the whole bank in your browser (WebAssembly), byte-identical to the native build</div></div>
     <div class="ch" role="listitem"><span class="meter"><i id="m-a" style="--h:48%"></i></span><div class="v" id="s-ab">239 / 495</div><div class="l">waves with a fit score of 70 or better. The rest is where the work continues</div></div>
   </div>
 </div>
@@ -189,7 +189,7 @@
           <div class="ctr"><div class="v" id="c-tf">–</div><div class="l">median song timbre distance, gen-gm ↔ gm.dls (dB per band and frame)</div></div>
           <div class="ctr"><div class="v" id="c-tfs" style="color:var(--b-s)">–</div><div class="l">for scale: gmplus ↔ gm.dls, two real sample banks, same songs</div></div>
         </div>
-        <p class="caveat"><b>Not done:</b> generation takes 1.14 s natively against a 300 ms budget, and the gmplus set is about 8× more audio. Fitting continues in the repository; these pages are re-rendered from each committed state.</p>
+        <p class="caveat"><b>Not done:</b> generation takes 1.14 s natively (1.4 s in the browser) against a 300 ms budget, and the gmplus set is about 8× more audio (12 s in the browser). Fitting continues in the repository; these pages are re-rendered from each committed state.</p>
       </div>
       <div class="rv">
         <div class="legend" style="margin:0 0 14px"><span><i style="background:var(--b-g)"></i>gen-gm mean score</span><span><i style="background:var(--b-p)"></i>gen-plus mean score</span></div>
@@ -203,18 +203,18 @@
   <div class="wrap">
     <div class="sec-hd rv">
       <div><span class="tn" aria-hidden="true">06</span><span class="kicker">listen</span><h2>Four banks, one position, one key.</h2></div>
-      <p>Every song is rendered through <strong>four banks</strong> by the same renderer with one gain per row: Windows <span style="color:var(--b-o)">gm.dls</span>, the <span style="color:var(--b-s)">gmplus</span> Sound Canvas soundfont, and the procedural bank fitted to each, <span style="color:var(--b-g)">gen-gm</span> and <span style="color:var(--b-p)">gen-plus</span>. Keys <code>1</code>–<code>4</code> switch banks without losing your place.</p>
+      <p>Windows <span style="color:var(--b-o)">gm.dls</span> is copyrighted, so it plays as a recording. The other three play <strong>live in your browser from the MIDI file</strong>: the <span style="color:var(--b-s)">gmplus</span> Sound Canvas soundfont, and the procedural banks <span style="color:var(--b-g)">gen-gm</span> and <span style="color:var(--b-p)">gen-plus</span>, which this page <strong>builds on your machine</strong> from the committed parameters with <code>gmgen</code> compiled to WebAssembly (about 1.4 s and 12 s). All four use the same engine, so only the banks differ. Keys <code>1</code>–<code>4</code> switch banks without losing your place.</p>
     </div>
     <div class="g3">
       <a class="card big rv" href="songs/" style="--acc:var(--b-g)">
         <span class="k">song selector</span><h3>70 songs</h3>
         <div class="eq" aria-hidden="true" id="eq"></div>
-        <p>46 DOS game tracks from John Novak's <em>General MIDI showdown</em> (Doom, TIE Fighter, Warcraft II, Descent, Sam &amp; Max…) and 24 from <em>The Very Best of GUS MIDI</em>, picked for instrument coverage. Each has a full mix and every channel solo.</p>
+        <p>46 DOS game tracks from John Novak's <em>General MIDI showdown</em> (Doom, TIE Fighter, Warcraft II, Descent, Sam &amp; Max…) and 24 from <em>The Very Best of GUS MIDI</em>, picked for instrument coverage. Play the full mix or any channel solo.</p>
         <span class="go">Open the song selector →</span>
       </a>
       <a class="card rv" href="sounds/" style="--acc:var(--b-p)">
         <span class="k">sound browser</span><h3>495 sounds</h3>
-        <p>Every wave as the bank stores it, in four versions, with its fit score, the instruments that use it, the gmplus sample it was fitted to, and its open defects.</p>
+        <p>Every wave played as a note of an instrument that uses it, in four versions, with its fit score, the gmplus sample it was fitted to, and its open defects.</p>
         <span class="go">Browse the sounds →</span>
       </a>
       <div class="card rv" style="--acc:var(--playhead)">
@@ -312,7 +312,7 @@
         <p class="took">About 720 files hand-picked in 1994 as ones that sound good on any GM card. 24 were taken greedily, each adding the most instruments not yet played.</p></article>
     </div>
     <p class="note rv">Song credits go to their composers and arrangers, named in the song selector. The renders are for comparison only and are removed on request.
-      <b style="color:var(--fg)">Tools:</b> Rust, Bun, Apple AUMIDISynth (renderer), LAME, Google Cloud Storage. Part of <a href="https://unisynth.exceed.hu/">unisynth</a>, the 64k-intro synth this bank was made for.</p>
+      <b style="color:var(--fg)">Tools:</b> Rust, Bun, <a href="https://github.com/spessasus/spessasynth_lib">SpessaSynth</a> (Apache-2.0; the engine for both the recordings and live playback), LAME, Google Cloud Storage. Part of <a href="https://unisynth.exceed.hu/">unisynth</a>, the 64k-intro synth this bank was made for.</p>
   </div>
 </section>
 </main>
@@ -322,7 +322,7 @@
     <div class="foot">
       <div><h4>gm-procedural</h4><p style="margin:0;max-width:46ch">A General MIDI bank made of parameters, by <b style="color:var(--fg)">robson / Exceed</b>, written in Rust. Status: every wave fitted; fidelity and speed still improving.</p></div>
       <div><h4>Inside</h4><ul><li><code>dls</code> · DLS reader / writer</li><li><code>gmgen</code> · the generator (no_std)</li><li><code>gmfit</code> · the fitter</li><li><code>gm-songs</code> · four-way A/B</li></ul></div>
-      <div><h4>Listen</h4><ul><li><a href="songs/">songs</a> · 70 × 4 banks</li><li><a href="sounds/">sounds</a> · 495 waves</li><li><a href="https://storage.googleapis.com/gm-procedural/index.html">raw pages</a></li></ul></div>
+      <div><h4>Listen</h4><ul><li><a href="songs/">songs</a> · 70 songs, 3 banks live</li><li><a href="sounds/">sounds</a> · 495 waves</li><li><a href="https://storage.googleapis.com/gm-procedural/index.html">raw pages</a></li></ul></div>
       <div><h4>Source</h4><ul><li><a href="https://github.com/unisynth/gm-procedural">github.com/unisynth/gm-procedural</a></li><li>code: MIT</li><li>page and words: © robson / Exceed</li><li>sister project: <a href="https://unisynth.exceed.hu/">unisynth</a></li></ul></div>
     </div>
     <div class="sig" aria-hidden="true">exceed · 2026</div>

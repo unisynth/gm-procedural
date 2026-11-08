@@ -11,6 +11,12 @@ importers:
       '@types/bun':
         specifier: latest
         version: 1.4.4
+      spessasynth_core:
+        specifier: ^4.4.9
+        version: 4.4.9
+      spessasynth_lib:
+        specifier: ^4.4.7
+        version: 4.4.7
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
@@ -25,6 +31,19 @@ packages:
 
   bun-types@1.4.4:
     resolution: {integrity: sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ==}
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
+
+  spessasynth_core@4.4.9:
+    resolution: {integrity: sha512-XukwmKvjQziCvjDdL0XAye1wg6FygDl3rdOGEO3WIwFQownVJybgbjZiH42ryG0fZSKWLVK3RHmD7SSNpn9WyA==}
+
+  spessasynth_lib@4.4.7:
+    resolution: {integrity: sha512-fZOoU3pV4o/OPfIZYOnj5En+fmejwWViaGgQ+l0p8q6j9t55APVoLojEuEENvdcpojoe+v6VQKj7E04Ke/dpag==}
+
+  stb-vorbis@0.0.7:
+    resolution: {integrity: sha512-OsD8Vm9EcStsiYGUBSqJ88gBPwDYR1Uv57bV/KZhu6Li1kzjm0fO+iiTkm79bZ1L2I/z6IrA1wkWHu3xQYY7Hw==}
+    engines: {node: '>=18'}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -51,6 +70,19 @@ snapshots:
     dependencies:
       '@types/node': 26.6.6
       undici-types: 8.12.4
+
+  fflate@0.8.3: {}
+
+  spessasynth_core@4.4.9:
+    dependencies:
+      fflate: 0.8.3
+      stb-vorbis: 0.0.7
+
+  spessasynth_lib@4.4.7:
+    dependencies:
+      spessasynth_core: 4.4.9
+
+  stb-vorbis@0.0.7: {}
 
   typescript@5.9.3: {}
 

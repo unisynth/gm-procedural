@@ -21,7 +21,7 @@
 <main class="app">
   <div class="deck" id="deck" role="region" aria-label="Player">
     <div class="wrap">
-      <div class="now" aria-live="polite"><div class="t">Pick a sound</div><div class="b">each wave as the bank stores it, its loop repeated to 2 s</div></div>
+      <div class="now" aria-live="polite"><div class="t">Pick a sound</div><div class="b">each wave played as a note: held 1.6 s, then released</div></div>
       <div class="banks" role="group" aria-label="Bank"></div>
       <div class="tbar">
         <button class="play" aria-label="Play">▶</button>
@@ -42,8 +42,8 @@
       <span class="sort" id="count"></span>
     </div>
     <p class="note">Score: gmfit's similarity to its own target, 100 = identical (log-mel spectra, onset, envelope, exact loop spectrum, periodicity and
-    modulation, minus penalties for audible defects). gm.dls and gen-gm play at 22.05 kHz; the gmplus target and gen-plus at 32 kHz.
-    Flags are defects the fitter detected but could not fix.</p>
+    modulation, minus penalties for audible defects). Each card plays the wave as a note of an instrument that uses it, at its own key: gm.dls as a recording, the other three live in your browser
+    (the procedural banks are built here by gmgen.wasm). Flags are defects the fitter detected but could not fix.</p>
     <div class="grid" id="grid"></div>
   </div>
 </main>
@@ -59,8 +59,9 @@ const tier = (s) => (s >= 85 ? "var(--ok)" : s >= 70 ? "var(--warn)" : "var(--er
 const CATS = [...new Set(WAVES.map((w) => w.cat))].sort();
 let cat = "", q = "", sort = "w", cur = null;
 
-const deck = new Deck($("#deck"), { onBank: () => mark() });
-deck.loopOn = true; deck.audio.loop = true;
+const deck = (window.deck = new Deck($("#deck")));
+for (const b of document.querySelectorAll("#deck .banks button")) b.addEventListener("click", () => setTimeout(mark));
+addEventListener("keydown", () => setTimeout(mark));
 $("#cats").innerHTML = [`<button data-v="" aria-pressed="true">all</button>`, ...CATS.map((c) => `<button data-v="${c}" aria-pressed="false">${c}</button>`)].join("");
 
 function visible() {
@@ -86,11 +87,12 @@ function mark() {
     el.querySelectorAll(".ab button").forEach((b) => b.setAttribute("aria-pressed", String(on && b.dataset.k === deck.bank)));
   });
 }
+const noteItem = (w) => ({ kind: "note", title: `${pad(w.w)} · ${names(w)[0]}`, mp3: `${AUDIO}waves/${pad(w.w)}.mp3`, note: w.note,
+  by: `${w.cat} · key ${w.note.key}${w.note.drums ? " (kit)" : `, program ${w.note.program + 1}`} · ${names(w).join(", ")}${w.src ? ` · gmplus “${w.src}”` : ""}` });
 function play(w, k) {
   cur = WAVES.find((x) => x.w === w);
-  if (k) { deck.bank = k; localStorage.setItem("gmp.bank", k); }
-  const u = Object.fromEntries(BANKS.map((b) => [b.k, `${AUDIO}${pad(w)}-${b.file}.mp3`]));
-  deck.load(u, { title: `${pad(w)} · ${names(cur)[0]}`, by: `${cur.cat} · ${names(cur).join(", ")}${cur.src ? ` · gmplus “${cur.src}”` : ""}` });
+  if (k) deck.setBank(k);
+  deck.load(noteItem(cur));
   history.replaceState(null, "", `#w${w}`);
   mark();
 }
@@ -100,7 +102,7 @@ $("#sort").addEventListener("change", (e) => { sort = e.target.value; render(); 
 $("#cats").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; cat = b.dataset.v; $("#cats").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b)); render(); });
 render();
 const m = location.hash.match(/^#w(\d+)$/);
-if (m) { const w = +m[1]; const el = document.getElementById(`w${w}`); el?.scrollIntoView({ block: "center" }); cur = WAVES.find((x) => x.w === w); const u = Object.fromEntries(BANKS.map((b) => [b.k, `${AUDIO}${pad(w)}-${b.file}.mp3`])); deck.load(u, { title: `${pad(w)} · ${names(cur)[0]}`, by: cur.cat, autoplay: false }); mark(); }
+if (m) { const w = +m[1]; document.getElementById(`w${w}`)?.scrollIntoView({ block: "center" }); cur = WAVES.find((x) => x.w === w); if (cur) deck.load(noteItem(cur), { autoplay: false }); mark(); }
 </script>
 </body>
 </html>

@@ -8,6 +8,8 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "spessasynth_core": "^4.4.9",
+    "spessasynth_lib": "^4.4.7",
     "typescript": "^5.9.0"
   }
 }

@@ -195,7 +195,8 @@ async function renderAll() {
   // songs that already hold four-way results are skipped unless --force (a crashed run resumes)
   const done4 = (id: string) => !!(results[id] as { mix?: { plus?: unknown } } | undefined)?.mix?.plus;
   const todo = sel.filter((s, i) => (!only || only.test(s.id)) && i % sn === si && (process.argv.includes("--force") || !done4(s.id)));
-  const jobs = +(process.env.JOBS ?? Math.max(1, availableParallelism() - 1));
+  // each job holds four banks of float audio plus AUMIDISynth renders; ~15 jobs took ~10 GB, so keep it small (JOBS overrides)
+  const jobs = +(process.env.JOBS ?? Math.min(3, Math.max(1, availableParallelism() - 1)));
   let done = 0;
   await pool(todo, jobs, async (s) => {
     const dir = join(OUT, s.id), tmp = join(dir, "tmp");

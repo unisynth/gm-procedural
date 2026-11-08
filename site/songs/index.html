@@ -21,7 +21,7 @@
 <main class="app">
   <div class="deck" id="deck" role="region" aria-label="Player">
     <div class="wrap">
-      <div class="now" aria-live="polite"><div class="t">Pick a song</div><div class="b">70 General MIDI songs · four banks each</div></div>
+      <div class="now" aria-live="polite"><div class="t">Pick a song</div><div class="b">70 General MIDI songs · gm.dls recorded, three banks live</div></div>
       <div class="banks" role="group" aria-label="Bank"></div>
       <div class="tbar">
         <button class="play" aria-label="Play">▶</button>
@@ -61,8 +61,11 @@ const SRC = { novak: "DOS games · John Novak's General MIDI showdown", gus: "Th
 const good = (tf) => tf != null && tf < 4;
 let cur = null, part = "mix", filter = "", q = "", sort = "title";
 
-const deck = new Deck($("#deck"), { onEnded: () => !deck.loopOn && part === "mix" && step(1) });
-const urls = (s, name) => Object.fromEntries(BANKS.map((b) => [b.k, `${AUDIO}${s.id}/${name}-${b.file}.mp3`]));
+window.deck = null;
+const deck = (window.deck = new Deck($("#deck"), { onEnded: () => part === "mix" && step(1) }));
+const item = (s, p) => { const st = p === "mix" ? null : s.stems.find((x) => `ch${x.ch}` === p);
+  return { kind: "song", title: st ? `${s.title} — ${st.label}` : s.title, by: st ? `solo · ${s.by}` : s.by,
+    mp3: `${AUDIO}songs/${s.id}/${p}.mp3`, midi: `${AUDIO}midi/${s.id}.mid`, seconds: s.seconds, solo: st ? st.ch : null }; };
 
 function visible() {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -97,23 +100,24 @@ function renderDetail() {
     <td class="n">${x.tf?.toFixed(2) ?? "–"}${bar(x.tf, "var(--b-g)")}</td><td class="n">${x.tfp?.toFixed(2) ?? "–"}${bar(x.tfp, "var(--b-p)")}</td>
     <td class="w">${x.waves.slice(0, 10).map((w) => `<a href="../sounds/#w${w}">${w}</a>`).join(" ")}${x.waves.length > 10 ? " …" : ""}</td></tr>`).join("")}
   </tbody></table>
-  <p class="help">Solo parts are 30-second excerpts with the other channels' notes removed (their controllers kept). All four banks go through the same
-  renderer (Apple's AUMIDISynth) with one gain per row, so only the waves differ. <kbd>1</kbd>–<kbd>4</kbd> switch bank at the same position,
+  <p class="help"><b>gm.dls</b> is © Microsoft / Roland, so it plays as a recording; <b>gmplus</b>, <b>gen-gm</b> and <b>gen-plus</b> play live in your browser from the MIDI file.
+  The procedural banks are built on this page by <code>gmgen</code> compiled to WebAssembly, from 230 KB of parameters. All four use the same engine
+  (<a href="https://github.com/spessasus/spessasynth_lib">SpessaSynth</a>), so only the banks differ. A solo mutes the other channels (the gm.dls solo is a separate recording).
+  Distances are measured on full mixes and on 30 s excerpts of each part. <kbd>1</kbd>–<kbd>4</kbd> switch bank at the same position,
   <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> seek, <kbd>N</kbd> / <kbd>P</kbd> next / previous song, <kbd>L</kbd> loop.
   Wave numbers open the sound in <a href="../sounds/">the sounds browser</a>.</p>`;
   $("#detail").querySelectorAll("tr[data-p]").forEach((tr) => tr.addEventListener("click", (e) => { if (e.target.closest("a")) return; playPart(tr.dataset.p); }));
 }
 function playPart(p) {
   part = p;
-  const st = p === "mix" ? null : cur.stems.find((x) => `ch${x.ch}` === p);
-  deck.load(urls(cur, p), { title: st ? `${cur.title} — ${st.label}` : cur.title, by: st ? `solo · 30 s excerpt · ${cur.by}` : cur.by });
+  deck.load(item(cur, p));
   document.querySelectorAll("tr[data-p]").forEach((tr) => tr.classList.toggle("on", tr.dataset.p === p));
   history.replaceState(null, "", `#${cur.id}${p === "mix" ? "" : "/" + p}`);
 }
 function select(id, { play = true, p = "mix" } = {}) {
   cur = SONGS.find((s) => s.id === id) || SONGS[0]; part = p;
   renderList(); renderDetail();
-  if (play) playPart(p); else { deck.load(urls(cur, p), { title: cur.title, by: cur.by, autoplay: false }); history.replaceState(null, "", `#${cur.id}`); }
+  if (play) playPart(p); else { deck.load(item(cur, p), { autoplay: false }); history.replaceState(null, "", `#${cur.id}`); }
   document.querySelector(`.list button[data-id="${cur.id}"]`)?.scrollIntoView({ block: "nearest" });
 }
 function step(d) { const v = visible(); const i = v.findIndex((s) => s.id === cur?.id); select(v[(i + d + v.length) % v.length].id); }

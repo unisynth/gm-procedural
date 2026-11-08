@@ -1,6 +1,9 @@
 // Landing page: hero oscilloscope (original vs model, per family), family rack, attack/loop diagram, live numbers.
-import { transportScroll } from "./player.js";
-transportScroll();
+(() => {
+  const t = document.getElementById("transport");
+  const f = () => t.classList.toggle("solid", scrollY > 40);
+  addEventListener("scroll", f, { passive: true }); f();
+})();
 const $ = (s) => document.querySelector(s);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const TAU = Math.PI * 2;
