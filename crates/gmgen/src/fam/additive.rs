@@ -105,6 +105,10 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
         (Region::Sustain, Some((_, l))) => ctx.den as usize == l && scoop.is_empty() && vib.is_empty() && am.is_empty() && l >= 16,
         _ => false,
     };
+    // Common amplitude shape (no per-harmonic decay, tilt or loudness table): every component is env(t)·a_k, so the
+    // whole layer — before the loop too, where the grid phases already repeat every L — is env(i)·z(i mod L) with z
+    // the inverse FFT of the components' constant amplitudes.
+    let shared = frozen_fft && pdecay <= 0.0 && tilt == 0.0 && am_tab.is_empty();
     let (mut fre, mut fim) = if frozen_fft { (vec![0.0f32; ctx.den as usize], vec![0.0f32; ctx.den as usize]) } else { (Vec::new(), Vec::new()) };
     for k in 1..=MAX_PARTIALS {
         let kf = k as f32;
@@ -214,10 +218,11 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
             // Frozen part by FFT: a·sin(2π(n·i/L + φ)) = Im(a·e^{2πiφ}·e^{2πi·n·i/L}) → coefficient at bin n.
             let direct_end = if frozen_fft && hm.is_empty() {
                 let phi = (if sides.is_empty() { ph0 } else { 0.0 }) + wph;
-                let a = wamp * amp[steps - 1];
+                // `shared`: the constant part a_k only; the envelope multiplies the whole sum below.
+                let a = wamp * if shared { a } else { amp[steps - 1] };
                 fre[nk as usize] += a * crate::math::cos_cycles(phi);
                 fim[nk as usize] += a * crate::math::sin_cycles(phi);
-                hold.min(n)
+                if shared { 0 } else { hold.min(n) }
             } else {
                 n
             };
@@ -272,8 +277,20 @@ pub fn render(ctx: &Ctx, l: &Layer, out: &mut [f32]) {
     if frozen_fft && fre.iter().chain(&fim).any(|v| *v != 0.0) {
         let l = fre.len();
         crate::correct::fft::fft(&mut fre, &mut fim, true);
-        for (i, o) in out.iter_mut().enumerate().skip(hold.min(n)) {
-            *o += fim[i % l];
+        if shared {
+            for (i, o) in out.iter_mut().enumerate() {
+                let e = if i >= hold {
+                    env[steps - 1]
+                } else {
+                    let (j, w) = (i / CR, (i % CR) as f32 / CR as f32);
+                    env[j] + (env[j + 1] - env[j]) * w
+                };
+                *o += e * fim[i % l];
+            }
+        } else {
+            for (i, o) in out.iter_mut().enumerate().skip(hold.min(n)) {
+                *o += fim[i % l];
+            }
         }
     }
 }

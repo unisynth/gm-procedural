@@ -231,6 +231,12 @@ explaining the limit.
 - [ ] 9.4 Measure generation time (native release full bank ≤ 300 ms, wasm ≤ 1 s on the reference machine) and
   optimise until it is within budget (rotators, culling, single-period loop copy). Record the numbers in
   `docs/synth/gm-procedural.md`. Verify with a timing test or bench output.
+  Progress (native release, i9-9900K, single thread, `bank::build`): 11.2 s → 1.14 s, scores unchanged (≤ 2e-4,
+  no flag changes). Was 95 % the harmonic correction's O(L²) loop DFT. Done: any-length deterministic FFT
+  (`correct/fft.rs`, radix-2 + Bluestein) for the loop correction, the FIR design and an FFT convolution; `tf`
+  twiddle/window/band tables; additive frozen sustain as one inverse FFT (whole layer env·z(i mod L) when the
+  amplitude shape is shared), rotators before the loop; modal hit rotators after the glide settles. Left: modal
+  324 ms, correction 260, additive 226 (`pdecay`/`tilt` layers), `tf` 186, shaker 67 — still 3.8× over budget.
 - [ ] 9.5 DAW: generate the bank in the bounce Worker and send it to the worklet through the `"bank"` message. Add a
   bank-source selector (Procedural default, OS bank when `/api/bank` or `data/bank.dls` exists), persisted in
   `localStorage`, with `?bank=proc|os`. Bounce and library follow the selection. Add the inspector's platform note.

@@ -294,6 +294,22 @@ Then a waveform × cutoff grid, resonance, a second oscillator (detuned unison 7
 filter envelope, one step at a time on the fit objective, the level recalibrated each step. Looped: one sustain layer; unlooped: one whole layer with the measured decay. Fit opens
 `level_db a h d s pw1 detune mix2 cutoff res fenv fa fd`.
 
+## Generation time (task 9.4)
+
+Native release, i9-9900K, one thread, full gm set (`gmgen::bank::build`): 11.2 s → 1.14 s (budget 300 ms; not met
+yet). Per part now: modal 324 ms, harmonic correction 260, additive 226, `tf` 186, shaker 67, rest < 20 each.
+- Harmonic correction: loop DFT/IDFT by a deterministic any-length FFT (`correct/fft.rs`: radix-2, Bluestein with
+  integer k² mod 2L chirps; `math` twiddles only, bit-identical native/wasm), FIR designed by one inverse FFT and
+  applied by FFT convolution (linear phase: Σ h[k]·x[i+k−m] = (h∗x)[i+m]).
+- `tf`: twiddle, Hann and bin→band tables built once per call (identical values).
+- `additive` sustain: the frozen part is one inverse FFT of the components (all on bin n of the L-point loop grid),
+  repeated; with a shared amplitude shape (no `pdecay`/`tilt`/`am` table) the whole layer is env(i)·z(i mod L).
+  Otherwise rotators before the loop, resynced to the exact phasor phase every 64 samples.
+- `modal` hits: per-mode rotators × per-sample decay after the glide settles (14 τ), exact while gliding, resynced
+  every 64 samples; trills keep the exact path.
+Scores before/after: no wave moved more than 2e-4, no flag changed. Tests: `fft_matches_dft_any_length`,
+`fir_by_fft_matches_direct`, `frozen_sustain_fft_matches_direct`, `hit_rotators_match_exact`.
+
 ## Commands
 
 ```bash
