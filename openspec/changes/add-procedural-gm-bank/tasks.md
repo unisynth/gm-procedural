@@ -179,8 +179,8 @@ skip when `GM_DLS` is unset.
 - [x] 7.6 Add the `fm` family (2–4 operators, index envelopes, feedback, stack or parallel), with tests that the
   sideband positions for a 1:1 and a 1:3.5 pair match theory. Check it on EP2, tubular bells and the bird tweet.
   Verify all 3 score above their placeholder score.
-- [ ] 7.7 Update `docs/synth/gm-procedural.md` and the AGENTS rows for the new families. Verify every family has a
-  parameter table.
+- [x] 7.7 Update `docs/synth/gm-procedural.md` and the AGENTS rows for the new families. Verify every family has a
+  parameter table. (All 10 families: additive, noise, drum, metal, modal, shaker, fm, formant, ks, subtractive.)
 
 ## 8. Bulk fit by GM family
 

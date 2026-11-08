@@ -286,9 +286,12 @@ Tests: harmonic levels follow the biquad within 1 dB (LP 1 kHz Q 2), a 4-octave 
 ≥ 20 dB higher early than late, sustain exact over the loop with a detuned second oscillator. Renders stay under
 `render::soft_knee` (0.9) only when levelled: a resonant saw peaks above full scale at 0 dB.
 
-Analysis (`gmfit/src/subtractive.rs`): pitched waves; waveform × cutoff (2–40 × f0) jointly, then resonance, a second
-oscillator (detuned unison 7/15 ¢, ±1 octave), and the filter envelope, one step at a time on the fit objective, the
-level recalibrated each step. Looped: one sustain layer; unlooped: one whole layer with the measured decay. Fit opens
+Analysis (`gmfit/src/subtractive.rs`): pitched waves. Looped: `profile_fit` fits waveform, pulse width, low-pass
+cutoff and Q to the loop's harmonic levels by least squares in dB (no renders; groups as `d_loop`, floor −60 dB)
+and reads a beating pair inside harmonic 1 (two lines within 6 dB: oscillator 2 = same waveform, that many
+loop-grid bins up, `ph2` searched in eighths). GM Square Wave 386: two 46.5 % pulses one bin apart, cutoff 6.3 kHz.
+Then a waveform × cutoff grid, resonance, a second oscillator (detuned unison 7/15 ¢, ±1 octave, `ph2`), and the
+filter envelope, one step at a time on the fit objective, the level recalibrated each step. Looped: one sustain layer; unlooped: one whole layer with the measured decay. Fit opens
 `level_db a h d s pw1 detune mix2 cutoff res fenv fa fd`.
 
 ## Commands
